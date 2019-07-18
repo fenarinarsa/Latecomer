@@ -5,28 +5,33 @@ An Apple II demo released at REVISION 2019 by fenarinarsa
 Party version 20/04/2019  
 Final version 17/07/2019  
    
-music: Big Alec/Delta Force  
-code: Fenarinarsa, Grouik/French Touch  
-gfx: Made/bomb, Raccoon  
+**music:** Big Alec/Delta Force  
+**code:** Fenarinarsa, Grouik/French Touch  
+**gfx:** Made/bomb, Raccoon  
 
-Website: https://fenarinarsa.com/latecomer
+**Web** (download the build here)  
+https://fenarinarsa.com/latecomer  
 
+**Twitter**  
+https://twitter.com/fenarinarsa  
 
-Web      https://fenarinarsa.com/latecomer  
-Twitter  https://twitter.com/fenarinarsa  
-Mastodon https://shelter.moe/@fenarinarsa
+**Mastodon**  
+https://shelter.moe/@fenarinarsa
 
 
 ## Building instructions
 
-Check Makefile for some directions.  
+ 
 You'll need the following tools:  
 - ACME Cross-Assembler  
 - AppleCommander  
 - a ProDOS template disk (any disk that gets you to AppleSoft BASIC is okay)  
 - make (the GNU/Linux tool)  
 
-The easier way to get a functional **make** on Windows is to install the git-sdk-64!
+The easier way to get a functional **make** on Windows is to install the git-sdk-64!  
+Check Makefile for some directions. 
+Change the paths to where you installed the tools above, then type 'make' to generate the disk image.  
+The default target also runs AppleWin at the end of the build process but that's optional.  
 
 ### Missing tools
 
