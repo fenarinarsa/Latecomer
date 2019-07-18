@@ -1,4 +1,4 @@
-# latecomer
+# Latecomer
 
 An Apple II demo released at REVISION 2019 by fenarinarsa
 
