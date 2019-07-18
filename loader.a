@@ -1,0 +1,53 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME
+; LOADER by fenarinarsa 2019
+; actually just moves data to highmem
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+!cpu 65c02
+
+tune_start = $3000
+tune_length = 12544
+
+
+AUXMOVE = $C311
+A1L = $3C ; source for auxmove
+A2L = $3E ; end source
+A4L = $42 ; destination for auxmove
+
+
+
+!macro set_ptr .src, .pointer {
+    	lda #<.src
+    	sta .pointer
+    	lda #>.src
+    	sta .pointer+1
+    	}
+
+
+    	*= $1000 		; ORG
+
+main
+		; copy tune to AUX
+		+set_ptr tune_start,A1L
+		+set_ptr tune_start+tune_length,A2L
+		+set_ptr tune_start,A4L
+		sec
+		jsr AUXMOVE
+		
+		rts

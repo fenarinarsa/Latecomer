@@ -1,0 +1,180 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME
+; some tables
+; by fenarinarsa 2019
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+	!align 255,0
+
+
+; sinus already scaled to HGR resolution (width and height)
+  
+sine_x  !byte   $45,$47,$48,$4A,$4C,$4E,$4F,$51,$53,$54,$56,$58,$59,$5B,$5D,$5E
+        !byte   $60,$61,$63,$64,$66,$68,$69,$6A,$6C,$6D,$6F,$70,$71,$73,$74,$75
+        !byte   $76,$78,$79,$7A,$7B,$7C,$7D,$7E,$7F,$80,$81,$82,$83,$84,$84,$85
+        !byte   $86,$86,$87,$87,$88,$88,$89,$89,$8A,$8A,$8A,$8A,$8B,$8B,$8B,$8B
+        !byte   $8B,$8B,$8B,$8B,$8B,$8A,$8A,$8A,$8A,$89,$89,$88,$88,$87,$87,$86
+        !byte   $86,$85,$84,$84,$83,$82,$81,$80,$7F,$7E,$7D,$7C,$7B,$7A,$79,$78
+        !byte   $76,$75,$74,$73,$71,$70,$6F,$6D,$6C,$6A,$69,$68,$66,$64,$63,$61
+        !byte   $60,$5E,$5D,$5B,$59,$58,$56,$54,$53,$51,$4F,$4E,$4C,$4A,$48,$47
+        !byte   $45,$43,$42,$40,$3E,$3C,$3B,$39,$37,$36,$34,$32,$31,$2F,$2D,$2C
+        !byte   $2A,$29,$27,$26,$24,$22,$21,$20,$1E,$1D,$1B,$1A,$19,$17,$16,$15
+        !byte   $14,$12,$11,$10,$0F,$0E,$0D,$0C,$0B,$0A,$09,$08,$07,$06,$06,$05
+        !byte   $04,$04,$03,$03,$02,$02,$01,$01,$00,$00,$00,$00,$00,$00,$00,$00
+        !byte   $00,$00,$00,$00,$00,$00,$00,$00,$00,$01,$01,$02,$02,$03,$03,$04
+        !byte   $04,$05,$06,$06,$07,$08,$09,$0A,$0B,$0C,$0D,$0E,$0F,$10,$11,$12
+        !byte   $14,$15,$16,$17,$19,$1A,$1B,$1D,$1E,$20,$21,$22,$24,$26,$27,$29
+        !byte   $2A,$2C,$2D,$2F,$31,$32,$34,$36,$37,$39,$3B,$3C,$3E,$40,$42,$43
+
+sine_y  !byte   $5F,$61,$64,$66,$68,$6B,$6D,$6F,$72,$74,$76,$79,$7B,$7D,$7F,$82
+        !byte   $84,$86,$88,$8A,$8C,$8E,$90,$92,$94,$96,$98,$9A,$9C,$9E,$9F,$A1
+        !byte   $A3,$A5,$A6,$A8,$A9,$AB,$AC,$AD,$AF,$B0,$B1,$B3,$B4,$B5,$B6,$B7
+        !byte   $B8,$B9,$B9,$BA,$BB,$BC,$BC,$BD,$BD,$BE,$BE,$BE,$BF,$BF,$BF,$BF
+        !byte   $BF,$BF,$BF,$BF,$BF,$BE,$BE,$BE,$BD,$BD,$BC,$BC,$BB,$BA,$B9,$B9
+        !byte   $B8,$B7,$B6,$B5,$B4,$B3,$B1,$B0,$AF,$AD,$AC,$AB,$A9,$A8,$A6,$A5
+        !byte   $A3,$A1,$9F,$9E,$9C,$9A,$98,$96,$94,$92,$90,$8E,$8C,$8A,$88,$86
+        !byte   $84,$82,$7F,$7D,$7B,$79,$76,$74,$72,$6F,$6D,$6B,$68,$66,$64,$61
+        !byte   $5F,$5D,$5A,$58,$56,$53,$51,$4F,$4C,$4A,$48,$45,$43,$41,$3F,$3C
+        !byte   $3A,$38,$36,$34,$32,$30,$2E,$2C,$2A,$28,$26,$24,$22,$20,$1F,$1D
+        !byte   $1B,$19,$18,$16,$15,$13,$12,$11,$0F,$0E,$0D,$0B,$0A,$09,$08,$07
+        !byte   $06,$05,$05,$04,$03,$02,$02,$01,$01,$00,$00,$00,$00,$00,$00,$00
+        !byte   $00,$00,$00,$00,$00,$00,$00,$00,$01,$01,$02,$02,$03,$04,$05,$05
+        !byte   $06,$07,$08,$09,$0A,$0B,$0D,$0E,$0F,$11,$12,$13,$15,$16,$18,$19
+        !byte   $1B,$1D,$1F,$20,$22,$24,$26,$28,$2A,$2C,$2E,$30,$32,$34,$36,$38
+        !byte   $3A,$3C,$3F,$41,$43,$45,$48,$4A,$4C,$4F,$51,$53,$56,$58,$5A,$5D
+
+
+      
+
+; offsets to HGR lines in page 1 and 2 (LO bytes and HI bytes)
+; LO bytes are the same for both pages
+; those LUTs can actually be generated at run-time and can be used for HGR and DHGR
+
+; they also can be optimized to take less memory (6 bytes for HGR_LINES_LO for instance)
+; but it will take more instructions to get to the final offset
+
+!align 255,0
+
+HGR_LINES_LO
+	!for i,0,3 {
+	!byte $00,$00,$00,$00,$00,$00,$00,$00
+    	!byte $80,$80,$80,$80,$80,$80,$80,$80
+    	}
+    	!for i,0,3 {
+    	!byte $28,$28,$28,$28,$28,$28,$28,$28
+	!byte $A8,$A8,$A8,$A8,$A8,$A8,$A8,$A8
+	}
+	!for i,0,3 {
+	!byte $50,$50,$50,$50,$50,$50,$50,$50
+	!byte $D0,$D0,$D0,$D0,$D0,$D0,$D0,$D0
+	}
+    !align 255,0
+; can be optimized with AND #$7F
+HGR_LINES_P1_HI
+	!for i,0,2 {
+	!byte $20,$24,$28,$2C,$30,$34,$38,$3C
+	!byte $20,$24,$28,$2C,$30,$34,$38,$3C
+	!byte $21,$25,$29,$2D,$31,$35,$39,$3D
+	!byte $21,$25,$29,$2D,$31,$35,$39,$3D
+	!byte $22,$26,$2A,$2E,$32,$36,$3A,$3E
+	!byte $22,$26,$2A,$2E,$32,$36,$3A,$3E
+	!byte $23,$27,$2B,$2F,$33,$37,$3B,$3F
+	!byte $23,$27,$2B,$2F,$33,$37,$3B,$3F
+    }
+    !align 255,0
+HGR_LINES_P2_HI
+	!for i,0,2 {
+	!byte $40,$44,$48,$4C,$50,$54,$58,$5C
+	!byte $40,$44,$48,$4C,$50,$54,$58,$5C
+	!byte $41,$45,$49,$4D,$51,$55,$59,$5D
+	!byte $41,$45,$49,$4D,$51,$55,$59,$5D
+	!byte $42,$46,$4A,$4E,$52,$56,$5A,$5E
+	!byte $42,$46,$4A,$4E,$52,$56,$5A,$5E
+	!byte $43,$47,$4B,$4F,$53,$57,$5B,$5F
+	!byte $43,$47,$4B,$4F,$53,$57,$5B,$5F
+    }
+    
+
+; for (D)HGR, for each X value, gives the offset to the first byte that we need to write on screen  
+!align 255,0
+HGR_X_OFFSET
+	!for i,0,139 {
+	!byte (i/7)*2
+	}
+	
+; for each X value, gives the offset to the first byte that we need to write in the tables below
+!align 255,0
+HGR_X_VALUE_OFFSET
+	!for i,0,139 {
+	!byte (i%7)*2
+	}
+
+; HGR values to plot a dot on screen. Two bytes are needed because HGR sucks
+; I didn't bother making a difference between WHITE1 and WHITE2 because I don't need it.
+
+HGR_X_VALUE_WHITE
+	!byte %00000011, %00000000, %00001100, %00000000, %00110000, %00000000, %01000000, %00000001, %00000000, %00000110, %00000000, %00011000, %00000000, %01100000
+
+HGR_X_VALUE_BLUE
+	!byte %10000001, %00000000, %10000100, %00000000, %10010000, %00000000, %11000000, %00000000, %00000000, %10000010, %00000000, %10001000, %00000000, %10100000
+
+HGR_X_VALUE_ORANGE
+	!byte %10000010, %00000000, %10001000, %00000000, %10100000, %00000000, %00000000, %10000001, %00000000, %10000100, %00000000, %10010000, %00000000, %11000000
+
+HGR_X_VALUE_GREEN
+	!byte %00000010, %00000000, %00001000, %00000000, %00100000, %00000000, %00000000, %00000001, %00000000, %00000100, %00000000, %00010000, %00000000, %01000000
+
+HGR_X_VALUE_PURPLE
+	!byte %00000001, %00000000, %00000100, %00000000, %00010000, %00000000, %01000000, %00000000, %00000000, %00000010, %00000000, %00001000, %00000000, %00100000
+
+GR_LINES_HI_P1
+	!byte $04,$04,$05,$05,$06,$06,$07,$07
+	!byte $04,$04,$05,$05,$06,$06,$07,$07
+	!byte $04,$04,$05,$05,$06,$06,$07,$07
+GR_LINES_HI_P2
+	!byte $08,$08,$09,$09,$0A,$0A,$0B,$0B
+	!byte $08,$08,$09,$09,$0A,$0A,$0B,$0B
+	!byte $08,$08,$09,$09,$0A,$0A,$0B,$0B
+GR_LINES_LO
+	!byte $00,$80,$00,$80,$00,$80,$00,$80
+	!byte $28,$A8,$28,$A8,$28,$A8,$28,$A8
+	!byte $50,$d0,$50,$d0,$50,$d0,$50,$d0
+
+sinus   !byte   $00,$03,$06,$09,$0C,$0F,$12,$15,$18,$1B,$1E,$21,$24,$27,$2A,$2D
+        !byte   $30,$33,$36,$39,$3B,$3E,$41,$43,$46,$49,$4B,$4E,$50,$52,$55,$57
+        !byte   $59,$5B,$5E,$60,$62,$64,$66,$67,$69,$6B,$6C,$6E,$70,$71,$72,$74
+        !byte   $75,$76,$77,$78,$79,$7A,$7B,$7B,$7C,$7D,$7D,$7E,$7E,$7E,$7E,$7E
+cosinus !byte   $7F,$7E,$7E,$7E,$7E,$7E,$7D,$7D,$7C,$7B,$7B,$7A,$79,$78,$77,$76
+        !byte   $75,$74,$72,$71,$70,$6E,$6C,$6B,$69,$67,$66,$64,$62,$60,$5E,$5B
+        !byte   $59,$57,$55,$52,$50,$4E,$4B,$49,$46,$43,$41,$3E,$3B,$39,$36,$33
+        !byte   $30,$2D,$2A,$27,$24,$21,$1E,$1B,$18,$15,$12,$0F,$0C,$09,$06,$03
+        !byte   $00,$FD,$FA,$F7,$F4,$F1,$EE,$EB,$E8,$E5,$E2,$DF,$DC,$D9,$D6,$D3
+        !byte   $D0,$CD,$CA,$C7,$C5,$C2,$BF,$BD,$BA,$B7,$B5,$B2,$B0,$AE,$AB,$A9
+        !byte   $A7,$A5,$A2,$A0,$9E,$9C,$9A,$99,$97,$95,$94,$92,$90,$8F,$8E,$8C
+        !byte   $8B,$8A,$89,$88,$87,$86,$85,$85,$84,$83,$83,$82,$82,$82,$82,$82
+        !byte   $81,$82,$82,$82,$82,$82,$83,$83,$84,$85,$85,$86,$87,$88,$89,$8A
+        !byte   $8B,$8C,$8E,$8F,$90,$92,$94,$95,$97,$99,$9A,$9C,$9E,$A0,$A2,$A5
+        !byte   $A7,$A9,$AB,$AE,$B0,$B2,$B5,$B7,$BA,$BD,$BF,$C2,$C5,$C7,$CA,$CD
+        !byte   $D0,$D3,$D6,$D9,$DC,$DF,$E2,$E5,$E8,$EB,$EE,$F1,$F4,$F7,$FA,$FD
+	!byte   $00,$03,$06,$09,$0C,$0F,$12,$15,$18,$1B,$1E,$21,$24,$27,$2A,$2D
+        !byte   $30,$33,$36,$39,$3B,$3E,$41,$43,$46,$49,$4B,$4E,$50,$52,$55,$57
+        !byte   $59,$5B,$5E,$60,$62,$64,$66,$67,$69,$6B,$6C,$6E,$70,$71,$72,$74
+        !byte   $75,$76,$77,$78,$79,$7A,$7B,$7B,$7C,$7D,$7D,$7E,$7E,$7E,$7E,$7E
+
+
+

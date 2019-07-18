@@ -1,0 +1,323 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME
+; Dotwaves
+; by fenarinarsa 2019
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+	!zone
+clear_waves_hgr1	
+	ldx #wave_maxdots
+-	+eraseplot plot_erase_hgr1_lo,plot_erase_hgr1_hi,plot_erase_hgr1_x
+	dex
+	bne -
+	rts
+clear_waves_hgr2	
+	ldx #wave_maxdots
+-	+eraseplot plot_erase_hgr2_lo,plot_erase_hgr2_hi,plot_erase_hgr2_x
+	dex
+	bne -
+	rts
+	
+	
+plot_x = tmp1
+
+; --------------------------------------------
+; init wave data, precalculating for each dot, set color
+; IN ptr2 = parameters table
+
+waves_init	!zone
+	ldy #17
+	; color pixel table
+	lda (ptr2),y
+	sta ptr1+1
+	dey
+	lda (ptr2),y
+	sta ptr1
+	dey
+
+	ldy #13
+.setcolor
+	lda (ptr1),y
+	sta hgr_x_value,y
+	dey
+	bpl .setcolor
+	
+	ldy #15
+	; copy parameters
+.copy	lda (ptr2),y
+	sta x2,y
+	dey
+	bpl .copy
+	
+
+
+	ldx #wave_maxdots
+	ldy #wave_maxdots
+	iny
+
+	; Okay this part seems crazy, I'm initializing some values
+	; that cascade through the init loop calculation
+	; and you may ask where those values come from...
+	; The answer is that in the party version the buffers weren't zeroed,
+	; as a result those values were already in memory and they always were the same
+	; because system files were loaded at those memory locations.
+	; For the final version I moved the buffers upper in memory so I had to duplicate
+	; those values manually for the sinewaves to look the same as in the party version
+	; Pretty wicked huh?
+
+	; final version fix
+	lda #$be
+	sta wave_x2_lo,y
+	lda #$4c
+	sta wave_x2_hi,y
+	
+	lda #$ad
+	sta wave_x22_lo,y
+	lda #$bc
+	sta wave_x22_hi,y
+	
+	lda #$20
+	sta wave_y2_lo,y
+	lda #$99
+	sta wave_y2_hi,y
+	
+	lda #$a5
+	sta wave_y22_lo,y
+	lda #$65
+	sta wave_y22_hi,y
+
+	; initializing the dots buffers with some values that increments
+	; from dot to dot and are always the same
+	; that way it makes the calculation lighter in waves_make
+	; this is what makes the dots NOT being in the same position of the wave
+.loop	clc
+	lda x2
+	adc wave_x2_lo,y ; previous
+	sta wave_x2_lo,x
+	lda x2+1
+	adc wave_x2_hi,y ; previous
+	sta wave_x2_hi,x
+
+	clc
+	lda x22
+	adc wave_x22_lo,y ; previous
+	sta wave_x22_lo,x
+	lda x22+1
+	adc wave_x22_hi,y ; previous
+	sta wave_x22_hi,x
+
+	clc
+	lda y2
+	adc wave_y2_lo,y ; previous
+	sta wave_y2_lo,x
+	lda y2+1
+	adc wave_y2_hi,y ; previous
+	sta wave_y2_hi,x
+	
+	clc
+	lda y22
+	adc wave_y22_lo,y ; previous
+	sta wave_y22_lo,x
+	lda y22+1
+	adc wave_y22_hi,y ; previous
+	sta wave_y22_hi,x
+	
+	dey
+	dex
+	cpx #$ff ; final version fix (but dot #0 isn't processed anyway in waves_make and wave_plot)
+	bne .loop
+	
+
+
+	rts
+	
+
+waves_make	!zone
+	
+	ldx wave_dotnb
+.loop	; find X
+	ldy wave_x2_hi,x	; j*x2
+	lda sine_x,y		; 69.5+70*sin(j*x2)
+	sta tmp1
+	ldy wave_x22_hi,x	; j*x22
+	lda sine_x,y		; 69.5+70*sin(j*x22)
+	clc
+	adc tmp1		; 139 +70*sin(j*x2)+70*sin(j*x22)
+	ror	;/2
+	sta wave_x,x
+	
+
+	
+	; find Y
+	ldy wave_y2_hi,x	; j*y2
+	lda sine_y,y		; 95.5+96*sin(j*y2)
+	sta tmp1
+	ldy wave_y22_hi,x	; j*y22
+	lda sine_y,y		; 95.5+96*sin(j*y22)
+	clc
+	adc tmp1		; 191+96*sin(j*y2)+96*sin(j*y22)
+	ror ; /2
+
+	sta wave_y,x
+	dex
+	bne .loop
+	
+	ldx #wave_maxdots
+.loop2	; inc X movement
+	clc
+	lda wave_x2_lo,x
+	adc x3
+	sta wave_x2_lo,x
+	lda wave_x2_hi,x
+	adc x3+1
+	sta wave_x2_hi,x
+	clc
+	lda wave_x22_lo,x
+	adc x32
+	sta wave_x22_lo,x
+	lda wave_x22_hi,x
+	adc x32+1
+	sta wave_x22_hi,x
+	
+	; inc Y movement
+	clc
+	lda wave_y2_lo,x
+	adc y3
+	sta wave_y2_lo,x
+	lda wave_y2_hi,x
+	adc y3+1
+	sta wave_y2_hi,x
+	clc
+	lda wave_y22_lo,x
+	adc y32
+	sta wave_y22_lo,x
+	lda wave_y22_hi,x
+	adc y32+1
+	sta wave_y22_hi,x
+	dex
+	bne .loop2
+
+.end
+	rts
+
+	!zone
+waves_hgr1
+	+modify HGR_LINES_P1_HI,wave_plot
+	+modify	plot_erase_hgr1_x,.mx
+	+modify	plot_erase_hgr1_lo,.mlo
+	+modify	plot_erase_hgr1_hi,.mhi
+	bra .start_wave
+waves_hgr2
+	+modify HGR_LINES_P2_HI,wave_plot
+	+modify	plot_erase_hgr2_x,.mx
+	+modify	plot_erase_hgr2_lo,.mlo
+	+modify	plot_erase_hgr2_hi,.mhi
+
+.start_wave
+	ldx wave_dotnb
+.loop
+	lda wave_y,x	; Y
+	tay
+	lda wave_x,x	; X
+	stx .mrestorex+1
+	tax
+	
+	; plot dot with OR
+	; Y = Y coordinate
+	; X = X coordinate
+	; output
+	; line_ptr = raster line
+	; Y = offset to the first byte in raster line
+	; may be optimized by changing input/output registers
+wave_plot
+	lda HGR_LINES_P1_HI,y
+	sta line_ptr+1
+	lda HGR_LINES_LO,y
+	sta line_ptr
+	lda HGR_X_VALUE_OFFSET,x	; offset for value LUT
+	ldy HGR_X_OFFSET,x		; Y=X offset
+	tax
+	lda (line_ptr),y
+wave_plot_mcolor1
+	ora hgr_x_value,x	
+	sta (line_ptr),y
+	inx
+	iny
+	lda (line_ptr),y
+wave_plot_mcolor2
+	ora hgr_x_value,x	
+	sta (line_ptr),y
+	;-------------- end plot
+
+	dey
+	tya
+.mrestorex
+	ldx #0
+.mx	sta plot_erase_hgr1_x,x
+	lda line_ptr
+.mlo	sta plot_erase_hgr1_lo,x
+	lda line_ptr+1
+.mhi	sta plot_erase_hgr1_hi,x
+
+	dex
+	bne .loop
+	rts
+	
+
+
+x2a	!byte	$E8,$05
+x22a	!byte	$00,$03
+y2a	!byte	$00,$03
+y22a	!byte	$AF,$05
+x3a	!byte	$E0,$01
+x32a	!byte 	$E8,$02
+y3a	!byte	$98,$FC
+y32a	!byte	$80,$00
+colora	!byte	<HGR_X_VALUE_BLUE,>HGR_X_VALUE_BLUE
+
+x2b	!byte	$30,$fe
+x22b	!byte	$ae,$ff
+y2b	!byte	$02,$00
+y22b	!byte	$9a,$c0
+x3b	!byte	$fd,$fd
+x32b	!byte 	$60,$fd
+y3b	!byte	$50,$fe
+y32b	!byte	$50,$fd
+colorb	!byte	<HGR_X_VALUE_ORANGE,>HGR_X_VALUE_ORANGE
+
+x2c	!byte	$b0,$03
+x22c	!byte	$e0,$04
+y2c	!byte	$e0,$01
+y22c	!byte	$a0,$04
+x3c	!byte	$60,$03
+x32c	!byte 	$20,$03
+y3c	!byte	$20,$02
+y32c	!byte	$c0,$05
+colorc	!byte	<HGR_X_VALUE_GREEN,>HGR_X_VALUE_GREEN
+
+x2d	!byte	$90,$56
+x22d	!byte	$b0,$03
+y2d	!byte	$00,$00
+y22d	!byte	$c0,$03
+x3d	!byte	$70,$00
+x32d	!byte 	$50,$01
+y3d	!byte	$50,$02
+y32d	!byte	$70,$05
+colord	!byte	<HGR_X_VALUE_PURPLE,>HGR_X_VALUE_PURPLE
+
+

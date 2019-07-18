@@ -1,0 +1,135 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME
+; Starfield
+; by fenarinarsa 2019
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+!cpu 65c02
+
+;-----------------------------------------------------------------------
+; STARFIELD
+;
+; max 20~30 dots per VBL with scrolltext and music
+;-----------------------------------------------------------------------
+
+
+current_star = tmp2
+star_x = tmp1
+;line_ptr = ptr1
+
+
+	; INIT and ERASE previous stars
+
+
+
+	!zone
+starfield_hgr2_clear
+	+modify		HGR_LINES_P2_HI,.mod_plot
+	+modify		plot_erase_hgr2_lo,mod_backup_lo
+	+modify		plot_erase_hgr2_hi,mod_backup_hi
+	+modify		plot_erase_hgr2_x,mod_backup_x
+	ldx #starfield_maxstars
+.erase2
+	+eraseplot plot_erase_hgr2_lo,plot_erase_hgr2_hi,plot_erase_hgr2_x
+	dex
+	bpl .erase2
+	rts
+
+starfield_hgr1_clear
+	+modify		HGR_LINES_P1_HI,.mod_plot
+	+modify		plot_erase_hgr1_lo,mod_backup_lo
+	+modify		plot_erase_hgr1_hi,mod_backup_hi
+	+modify		plot_erase_hgr1_x,mod_backup_x
+	ldx #starfield_maxstars
+.erase1
+	+eraseplot plot_erase_hgr1_lo,plot_erase_hgr1_hi,plot_erase_hgr1_x
+	dex
+	bpl .erase1
+	rts
+
+	; DRAW
+	
+starfield
+	ldx starfield_nbstars	; # of dots (test)
+	stx current_star
+
+loop
+	; X = star number
+	lda starfield_x,x
+	sta star_x
+	sec
+	sbc starfield_speed,x
+	cmp #140
+	bcc .noreset			; X is <140 (else it's an overflow of dec)	
+	lda #139
+.noreset
+	sta starfield_x,x
+	ldy starfield_y,x
+
+plot
+	; Y = Y coordinate
+	; star_x = X coordinate
+	lda HGR_LINES_LO,y
+	sta line_ptr
+.mod_plot
+	lda HGR_LINES_P1_HI,y
+	sta line_ptr+1
+
+	ldx star_x	; X coordinate
+	ldy HGR_X_VALUE_OFFSET,x	; offset for value LUT
+	tya
+	ldy HGR_X_OFFSET,x		; X offset
+	sty star_x		; backup for future erase
+	tax	
+	lda HGR_X_VALUE_WHITE,x	
+	sta (line_ptr),y
+	inx
+	iny
+	lda HGR_X_VALUE_WHITE,x	
+	sta (line_ptr),y
+	
+	ldx current_star
+	
+	; backup data for future erase
+	lda line_ptr
+mod_backup_lo
+	sta plot_erase_hgr1_lo,x
+	lda line_ptr+1
+mod_backup_hi
+	sta plot_erase_hgr1_hi,x
+	lda star_x
+mod_backup_x
+	sta plot_erase_hgr1_x,x
+	
+	dex
+	stx current_star
+	bpl loop
+	rts
+
+; No I didn't generate this by hand, but I reordered some coordinates manually
+	
+starfield_x
+        !byte  14, 50, 80,93,  7,138,134, 86,47,121,134, 43,69, 73, 90,139,45,107,127,123, 97,136,137,85,65,105,129,104, 7,15,84, 79,30, 41, 94,  7,120, 19,54,123
+starfield_y
+        !byte 120,159,106,24,134,104,184,190,57,150,  3,128,66,115,111, 72,38, 56, 11, 41,109, 43, 75,17,39,162,114, 25,35, 4,48,166,81,164,174,177,152,179,86,121
+starfield_speed
+        !byte 1  ,  4,  1, 3,  3,  3,  3,  4, 4,  1,  4,  2, 2,  2,  3,  2, 2,  4,  1,  3,  2,  4,  2, 2, 2,  3,  3,  3, 1, 2, 3,  1, 4,  4,  1,  3,  1,  2, 2,  2
+
+
+	
+	

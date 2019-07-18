@@ -1,0 +1,549 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME 0.90
+; Chiptune Player for MOCKINGBOARD (based on YM format)
+; original code by FRENCH TOUCH released under GPLv3
+; modified FYM version by Fenarinarsa
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+!cpu 65c02
+
+!source "macros.a"
+
+; This player uses ZP $10-$1E
+; must be loaded at $D000
+; tune must be loaded at <tune_start> in AUX memory
+
+; CONSTANTES
+; Page ZERO
+
+
+Temp		= $18
+MB_SeqCount	= $17
+MB_SeqLength	= $16
+MB_OUT		= $14 	; +$15
+MB_pPartition	= $12 ; +$13
+MB_Mem		= $10 ; +$11
+
+
+_RAMRDmain	=	$C002
+_RAMRDaux	=	$C003
+_RAMWRTmain	=	$C004
+_RAMWRTaux	=	$C005
+
+tune_start = $3000	
+
+
+
+; =============================================================================
+
+
+	*= $D000
+
+
+	JMP PLAYERYM	; play music / call with JSR $D000
+	JMP INIT_PLAYER	; init player / call with JSR $D003 / returns MB slot in A (zero if no MB)
+	JMP INIT_TUNE	; init tune / call with JSR $D006
+	JMP AYRESET	; reset AY / call with JSR $D009
+		
+; =============================================================================
+; initialize mockingboard and many player vars
+;
+; returns mockingboard slot in A, zero if no MB detected
+
+INIT_PLAYER
+	!zone
+	sta _RAMRDaux
+	sta _RAMWRTaux	
+	
+	; MB activation MB on IIc (mockingboard 4c), always at $C400
+	STA $C404
+	STA $C405
+
+	jsr DETECTMB
+	cmp #0
+	bne .mb_ok
+	sta _RAMRDmain
+	sta _RAMWRTmain
+	rts
+		
+.mb_ok	jsr Init_MB
+	JSR AYRESET
+
+
+	; prepare partition data
+	; this must be done only ONCE
+
+	; sequence length
+	LDA tune_start
+	STA MB_SeqLength
+		
+	; relocate partition pointers
+	;+set_ptr tune_start+1,MB_pPartition
+	+set_ptr tune_start+1,MB_Mem
+.reloc1	LDY #0
+	CLC
+.reloc0	LDA (MB_Mem),Y
+	ADC #>tune_start
+	STA (MB_Mem),Y
+	INY
+	CPY #14
+	BNE .reloc0
+	LDY #28
+	LDA (MB_Mem),Y
+	BEQ .end_relocate ; partition end
+	CLC
+	LDA MB_Mem
+	ADC #28
+	STA MB_Mem
+	BCC .reloc1
+	LDA MB_Mem+1
+	ADC #0
+	STA MB_Mem+1
+	BRA .reloc1
+.end_relocate	
+
+	;jsr INIT_TUNE
+	
+	; modifying code into the player to avoid using ZP
+	; I'm using $fd as the placeholder because it doesn't appear in opcodes
+	; and shouldn't appear in used addresses
+
+	+set_ptr player_startmod,MB_Mem
+	ldy #(player_endmod-player_startmod)
+.modloop
+	lda (MB_Mem),y
+	cmp #$fd
+	bne .nomod
+	lda MB_OUT+1
+	sta (MB_Mem),y
+.nomod	dey
+	bne .modloop
+	
+	sta _RAMRDmain
+	sta _RAMWRTmain
+
+	; returns MB slot #
+	lda MB_OUT+1
+	ora $07
+	RTS
+
+
+; =============================================================================
+; INIT TUNE REPLAY DATA
+;
+; this is exactly what happens when there is a pattern change in the replayrout
+; with the addition of resetting MB_pPartition to the partition start
+; and the replayrout could be optimized
+;
+; must be called when you want to restart the tune
+; (don't forget to disable the PLAYERYM call to be played from an interrupt)
+
+INIT_TUNE	!zone
+	sta _RAMRDaux
+
+	+set_ptr tune_start+1,MB_pPartition
+
+INIT_SEQUENCE
+	; reset sequence count
+	LDA MB_SeqLength
+	STA MB_SeqCount
+	
+	; packbits file format
+	; 1 control byte (n) + ? data bytes
+	; if control byte ==128 => end
+	; if control byte <128 => copy n+1 data bytes
+	; if control byte >128 => repeat 1 data byte 257-n times
+
+	; copy partition pointers
+	LDY #27
+.copy0	LDA (MB_pPartition),Y
+	STA TableOffsetDataH,Y
+	DEY
+	BPL .copy0
+
+	LDX #13					; registers (0-13)
+
+.b1	STZ TableCompression,X
+	LDY #00
+	LDA TableOffsetDataB,X
+	STA MB_Mem
+	LDA TableOffsetDataH,X
+	STA MB_Mem+1
+	LDA (MB_Mem),Y				; control byte
+	BPL .b1pos
+	; negative value (repeat mode)
+	STA TableCompression,X ; mode repeat
+	EOR #$FF
+	SEC
+	ADC #$00				; negate A
+.b1pos	INC
+	STA TableCompteur,X
+	INY
+	LDA (MB_Mem),Y				; value byte
+	STA TableData,X
+	CLC						; ptr+2 => to next byte (control or value)
+	LDA MB_Mem
+	ADC #2
+	STA TableOffsetDataB,X
+	LDA MB_Mem+1
+	ADC #0
+	STA TableOffsetDataH,X
+	DEX
+	BPL .b1
+	
+	sta _RAMRDmain
+	rts
+
+		
+; =============================================================================
+; PLAYER
+; must be called at 50Hz rate
+; does not save any register
+; =============================================================================
+
+PLAYERYM
+	sta _RAMRDaux
+	
+player_startmod	
+	!zone psg1
+	LDX #00
+	; R00~12
+.br1	LDA TableData,X
+	STX $fd01			; ORA1 (data)
+	LDY #$07			; Set fct "Set PSG Reg #"
+	STY $fd00			; ORB1 (fct)
+	LDY #$04			; Set fct "Inactive"
+	STY $fd00			; ORB1 (fct)
+	STA $fd01			; ORA1 (data)
+	LDY #$06			; Set fct "Write DATA"
+	STY $fd00			; ORB1 (fct)
+	LDY #$04			; Set fct "Inactive"
+	STY $fd00			; ORB1 (fct)
+	INX
+	CPX #13	
+	BNE .br1
+		
+	; R13
+	LDA TableData,X
+	CMP #$FF
+	BEQ .no_r13update1
+	STX $fd01			; ORA1 (data)
+	LDY #$07			; Set fct "Set PSG Reg #"
+	STY $fd00			; ORB1 (fct)
+	LDY #$04			; Set fct "Inactive"
+	STY $fd00			; ORB1 (fct)
+	STA $fd01			; ORA1 (data)
+	LDY #$06			; Set fct "Write DATA"
+	STY $fd00			; ORB1 (fct)
+	LDY #$04			; Set fct "Inactive"
+	STY $fd00			; ORB1 (fct)
+		
+.no_r13update1
+	;jmp noreverb ; no reverb for party screen  
+	; SECOND AY CHIP (same data)
+	!zone psg2
+	LDX #00
+	; R00~12
+.br1	LDA TableData2,X
+	;AY-2
+	STX $fd81
+	LDY #$07			; Set fct "Set PSG Reg #"
+	STY $fd80
+	LDY #$04			; Set fct "Inactive"
+	STY $fd80
+	STA $fd81
+	LDY #$06			; Set fct "Write DATA"
+	STY $fd80
+	LDY #$04			; Set fct "Inactive"
+	STY $fd80
+	INX
+	CPX #13				; 
+	BNE .br1
+		
+	LDA TableData2,X
+	CMP #$FF
+	BEQ .no_r13update2
+	;AY-2
+	STX $fd81
+	LDY #$07			; Set fct "Set PSG Reg #"
+	STY $fd80
+	LDY #$04			; Set fct "Inactive"
+	STY $fd80
+	STA $fd81
+	LDY #$06			; Set fct "Write DATA"
+	STY $fd80
+	LDY #$04			; Set fct "Inactive"
+	STY $fd80
+		
+.no_r13update2 ;
+player_endmod
+noreverb
+
+;-------------------------------------------
+; handling the partition and
+; unpacking the next data to be played (RLE)
+
+	ldx #14
+.shiftdata
+	lda TableData-1,x
+	sta TableData2-1,x
+	dex
+	bne .shiftdata
+
+	!zone unpack_data
+	LDA MB_SeqCount
+	DEC
+	STA MB_SeqCount
+	BNE .unpack_sequence
+	JMP next_sequence
+		
+.unpack_sequence
+	; handling packbits
+	LDX #13
+.b2	LDA TableCompteur,X
+	DEC
+	BEQ .nextpacket ; ==0 read next control byte
+	STA TableCompteur,X ; !=0 still in repeat mode
+		
+	LDA TableCompression,X
+	BNE .g2					; repeat mode
+		
+	; copy mode
+	; ptr+1 next value byte
+	LDA TableOffsetDataB,X
+	STA MB_Mem
+	;CLC
+	;ADC #01
+	INC
+	STA TableOffsetDataB,X
+	LDA TableOffsetDataH,X
+	STA MB_Mem+1
+	;ADC #00
+	;STA TableOffsetDataH,X
+	; take new byte
+	LDY #00
+	LDA (MB_Mem),Y
+	STA TableData,X
+		
+.g2	DEX
+	BPL .b2
+
+	sta _RAMRDmain
+	RTS				; exit 1
+
+.nextpacket
+	LDY #00
+	STZ TableCompression,X	; clear compression mode
+	LDA TableOffsetDataB,X
+	STA MB_Mem
+	LDA TableOffsetDataH,X
+	STA MB_Mem+1
+	LDA (MB_Mem),Y			; control byte
+	CMP #$80  ; $80 = end
+	;BEQ .endframes
+	BCC .b1pos
+	; negative value (repeat mode)
+	STA TableCompression,X ; mode repeat
+	EOR #$FF
+	SEC
+	ADC #$00			; negate A
+.b1pos	INC
+	STA TableCompteur,X
+	INY
+	LDA (MB_Mem),Y			; value byte
+	STA TableData,X
+	CLC				; ptr+2 => to next byte (control or value)
+	LDA MB_Mem
+	ADC #2
+	STA TableOffsetDataB,X
+	
+	JMP .g2
+
+next_sequence
+	; we are at the end of the sequence
+	; reset sequence count
+	LDA MB_SeqLength
+	STA MB_SeqCount
+
+	; next partition sequence (+28 bytes)
+	CLC
+	LDA MB_pPartition
+	ADC #28
+	STA MB_pPartition
+	LDA MB_pPartition+1
+	ADC #0
+	STA MB_pPartition+1
+		
+	LDY #0
+	LDA (MB_pPartition),Y
+	BNE .okay
+
+	; end of partition, looping to the start of the song
+	+set_ptr tune_start+1,MB_pPartition
+.okay	jsr INIT_SEQUENCE		
+	sta _RAMRDmain
+	RTS			; exit 2
+
+; =============================================================================
+; Mockingboard detection by Grouik/FRENCH TOUCH
+;
+; returns
+; A = mockingboard slot number
+;     zero if no mockingboard present
+; if mockingboard present, MB_OUT = $Cx00
+
+DETECTMB
+!zone
+	; MB / SLOT #?
+	LDA #00
+	STA MB_OUT
+.bdet	LDA #$07	; on commence en $C7 jusqu'en $C1
+	ORA #$C0	; -> $Cx
+	STA MB_OUT+1
+	LDY #04		; $CX04
+	LDX #02		; 2 v�rifs
+
+.bt	LDA (MB_OUT),Y ; timer 6522 (Low Order Counter) - attention compte � rebour !
+	STA Temp	; 3 cycles
+	LDA (MB_OUT),Y	; + 5 cycles = 8 cycles entre les deux acc�s au timer
+	SEC		; 
+	SBC Temp	; 
+	CMP #$F8	; -8 (compte � rebour) ?
+	BNE .Ko
+	DEX
+	BNE .bt		; boucle d�tection
+	;INX		; Mocking OK (X=1)
+.end	LDA .bdet+1
+	sta .result+1
+		
+.Ko	DEC .bdet+1	; on d�cr�mente le "slot"
+	BNE .bdet	; on boucle de 7 � 1
+.result	LDA #0		; mockingboard slot#
+	ora #$c0
+	sta MB_OUT+1
+	lda .result+1
+	RTS
+			
+; =============================================================================
+; init Mockingboard
+
+Init_MB				 		
+!zone	
+	;LDA	#$80
+	;STA 	MB_OUT80
+	;LDA 	MB_OUT00+1
+	;STA 	MB_OUT01+1
+	;STA	MB_OUT80+1
+	;STA 	MB_OUT81+1
+	;STA		OFFBIT+2	; fixe BIT $Cx04 (r�init interruption) du player
+	;LDA 	#$01
+	;STA 	MB_OUT01
+	;LDA 	#$81
+	;STA 	MB_OUT81
+	
+	; PREMIER init MB (MB_OUT00/MB_OUT80)
+	LDA   	#$FF
+	LDY	#$03
+	STA 	(MB_OUT),Y	; STA   $C403		; DDRA1
+	LDY	#$83
+	STA 	(MB_OUT),Y	; STA   $C483		; DDRA2
+	LDA   	#$07
+	LDY 	#$02
+	STA	(MB_OUT),Y	; STA   $C402		; DDRB1
+	LDY 	#$82
+	STA	(MB_OUT),Y	; STA   $C482		; DDRB2
+
+	LDA   	#$FF
+	LDY	#$03
+	STA 	(MB_OUT),Y	; STA   $C403		; DDRA1
+	LDY	#$83
+	STA 	(MB_OUT),Y	; STA   $C483		; DDRA2
+	LDA   	#$07
+	LDY 	#$02
+	STA	(MB_OUT),Y	; STA   $C402		; DDRB1
+	LDY 	#$82
+	STA	(MB_OUT),Y	; STA   $C482		; DDRB2
+	RTS
+			
+; =============================================================================
+AYRESET	
+!zone
+	LDY #$80
+	LDA #$00	; Set fct "Reset"
+	STA (MB_OUT)
+	STA (MB_OUT),y	
+	LDA #$04	; Set fct "Inactive"
+	STA (MB_OUT)
+	STA (MB_OUT),y
+
+	ldx #13
+	lda #0
+.bp	;LDA YMResetData,X
+
+	;AY-1
+	;STX $C401			; ORA1 (data)
+	;LDY #$07			; Set fct "Set PSG Reg #"
+	;STY $C400			; ORB1 (fct)
+	;LDY #$04			; Set fct "Inactive"
+	;STY $C400			; ORB1 (fct)
+	;STA $C401			; ORA1 (data)
+	;LDY #$06			; Set fct "Write DATA"
+	;STY $C400			; ORB1 (fct)
+	;LDY #$04			; Set fct "Inactive"
+	;STY $C400			; ORB1 (fct)
+		
+	;AY-2
+	;STX $C481
+	;LDY #$07			; Set fct "Set PSG Reg #"
+	;STY $C480
+	;LDY #$04			; Set fct "Inactive"
+	;STY $C480
+	;STA $C481
+	;LDY #$06			; Set fct "Write DATA"
+	;STY $C480
+	;LDY #$04			; Set fct "Inactive"
+	;STY $C480
+	
+	; reset AY data
+	
+	sta TableData,X
+	sta TableData2,X
+		
+	dex
+	bpl .bp
+
+	rts
+
+
+;YMResetData		!byte 0,0,0,0,0,0,0,$3F,0,0,0,0,0,0
+		
+			
+!align 255,0 
+
+TableOffsetDataH 	!fill 14,00
+TableOffsetDataB 	!fill 14,00
+
+TableOffsetDataLoopB	!fill 14,00
+TableOffsetDataLoopH	!fill 14,00
+
+TableCompteur 		!fill 14,00
+TableData 		!fill 14,00
+TableData2		!fill 14,00
+TableCompression	!fill 14,00
+
+

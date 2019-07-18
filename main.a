@@ -1,0 +1,997 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME
+;
+; LATECOMER
+; by Cyril "fenarinarsa" Lambin 2019
+; fenarinarsa.com
+; Twitter  @fenarinarsa
+; Mastodon @fenarinarsa@shelter.moe
+;
+;   ############# FINAL VERSION #############
+;
+; (hashtag #final)
+; (yes it's #FINAL)
+;
+; It may not work on your Apple II. If so I'm sorry about it.
+; 
+; It needs a 65C02, 128k of RAM, a Mockingboard 2 or a Mockingboard 4c
+; and it really looks better on a PAL machine because the first part locks on a 50Hz sync.
+; Also the end graphic looks better on a Le Chat Mauve RGB card because I used this card's color palette
+; (where for instance GREY1 != GREY2)
+;
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+
+
+; TODO:
+; check scrolltext clear = scrolltext position at the start of the effect
+
+
+!convtab "a2txt.bin" 	; incorporation table caractère APPLE II (normal) générale
+!cpu 65c02
+
+!source "macros.a"
+
+	*= $6000;
+
+
+; set to 1 to enable some debug information (unused in latecomer)
+debug = 0
+
+; soft switches
+_80STOREoff	=	$C000
+_80STOREon	=	$C001
+_TEXToff	=	$C050
+_TEXTon		=	$C051
+_HIRESoff	=	$C056
+_HIRESon	=	$C057
+_MIXEDoff	=	$C052
+_MIXEDon	=	$C053
+_DHRon		=	$C05E
+_DHRoff		=	$C05F
+_80COLoff	=	$C00C
+_80COLon	=	$C00D
+_PAGE2on	=	$C055
+_PAGE2off	=	$C054
+_RAMWRTmain	=	$C004
+_RAMWRTaux	=	$C005
+_RDVBLBAR	=	$C019 ; *not* RDVBL (VBL signal low)
+
+
+;----------------------------------------------------------
+; ZERO PAGE
+;
+; ProDOS/BASIC/Monitor: all your base are belong to us
+; it's quite a mess actually
+; $10-$18 is used by Mockingboard player
+
+bIIc		= $09	; byte IIc	(00 = //c | other = pas //c !)
+bMachine 	= $0A	; byte MACHINE ($7F/IIE | $FF/GS)
+vblflag		= $0b
+music_on	= $0c
+vbl_swaphgr	= $0d
+MB_OUT		= $14 ; +$15 / from player.a (detected mockingboard base address)
+
+;scroll_y_current =	$FD
+text_ptr		=	$FC ; +$FD
+;currentline_nb	=	$FB
+tmp2		=	$FB
+tmp1		=	$FA
+ptr1		=	$F8 ;+$F9
+ptr2		=	$F6 ;+$F7
+ptr3		=	$F4 ;+$F5
+current_GRpage	=	$F3
+scroll_step	=	$F2
+scroll_y1	=	$F1
+scroll_y2	=	$F0
+scroll_ptr1	=	$EE ;+$EF
+scroll_ptr1end	=	$EC ;+$ED
+scroll_ptr2	=   $EA ;+$EB 
+scroll_ptr2end  =   $E8 ;+$E9
+courbe_step	=	$E7
+scroll_step1	=	$E6
+scroll_step2	=	$E5
+
+; RAM MOVE vars
+RM_SIZEH	= $E4
+RM_SIZEL	= $E3
+RM_FROM		= $E1 ; +$E2
+RM_TO		= $DF ; +$E0
+
+scroll_ptr	= $DD ; +$DE
+ptr4		= $DB ; +$DC
+line_ptr	= $D9 ; +$DA
+wave_dotnb	= $D8
+ptr5		= $D6 ; +$D7
+
+
+y32		= $d4
+y3		= $d2
+x32		= $d0
+x3		= $ce
+y22		= $cc
+y2		= $ca
+x22		= $c8
+x2		= $c6
+
+scroll_bounce	= $c5
+
+hgr_x_value	= $b8	; to $c5 = 14 bytes pixel color data
+vbl_count	= $b6	; +$b7
+starfield_nbstars = $b5
+
+; rotozoom
+
+xxl		= $A0
+xxh		= $A1
+yyl		= $A2
+yyh		= $A3
+angle1		= $A4
+angle2		= $A5
+
+Ul		= $A7
+Uh		= $A8
+Vl		= $A9
+Vh		= $AA
+_Ul		= $AB
+_Uh		= $AC
+_Vl		= $AD
+_Vh		= $AE
+SaveY		= $AF
+
+scaleDirection	= $91
+X1h		= $92
+Y1l		= $93
+Y1h		= $94
+scaleL		= $95
+scaleH		= $96
+ptTexture	= $9E	; +$9F
+
+multiplier	= $86 ; 2 bytes
+multiplicand	= $84 ; 2 bytes
+product		= $80 ; 4 bytes
+
+waves_debug_flag = $7f
+
+starfield_maxstars	= 19	
+wave_maxdots 		= 180	; max 254 but 180 is a good tradeoff for speed
+
+
+;-----------------------------------------------------------------------------------------
+; RAM organization
+;
+; as for ZP, we don't mind for anything that is part of the OS
+; don't even think going back to the Monitor or BASIC (hahahaha no) once the demo launched
+;
+
+
+; player should be loaded at <player_start> before calling main.b
+player_start 		= $1800	; original player location
+player_length 		= $400 ; actually <900 bytes but let's say it's 1kB
+player_mb 		= $D000 ; final location
+
+
+; circular buffers for scrolltext
+; character length = 14*2 = 28 bytes
+; buffer1 = 20+1 characters *2 = 42 chars, 44*28 = 1232 bytes ($498)
+scroll_buffer_length = $498
+scroll_buffer1		= $A6B4 
+scroll_buffer1_end	= $A6B4 + (28*20)+14 ; where to write the new char again
+scroll_buffer2 		= $AB4C
+scroll_buffer2_end	= $AB4C + (28*20)+14 ; 90*14 = 1260 bytes buffer (shifted)
+; current character (copied from font)
+scroll_char_buffer	= $AFE4 	; 28 bytes
+
+
+; plot tables (for sinewaves & starfield)
+; each array takes one $100 page (max 256 dots)
+plot_erase_hgr1_lo	= $B000
+plot_erase_hgr1_hi	= $B100
+plot_erase_hgr1_x	= $B200
+plot_erase_hgr2_lo	= $B300
+plot_erase_hgr2_hi	= $B400
+plot_erase_hgr2_x	= $B500
+wave_x		= $B600
+wave_y		= $B700
+wave_x2_lo	= $B800
+wave_x2_hi	= $B900
+wave_x22_lo	= $BA00
+wave_x22_hi	= $BB00
+wave_y2_lo	= $BC00
+wave_y2_hi	= $BD00
+wave_y22_lo	= $BE00
+wave_y22_hi	= $BF00
+
+
+;---------------------------------------------------------------
+; MAIN
+;
+; here we go
+    
+	stz music_on	; 65C02 detection by crashing at the first instruction on 6502
+
+   	lda #' '
+	jsr cleartext
+
+ 	; copy player to highmem
+	; read RAM/write RAM, $D000 bank 1
+	lda $c08b
+	lda $c08b
+	+set_ptr player_start,RM_FROM
+	+set_ptr player_mb,RM_TO
+	+set_ptr player_length,RM_SIZEL
+	jsr RAM_MOVEUP 
+	
+	; MB detection and tune init
+	jsr player_mb+3
+	cmp #0
+	bne .mb_okay
+	
+	; no mockingboard, sorry
+	ldx #0
+	ldy #0
+	+set_ptr .mb_error,ptr1
+	jsr print
+	bra *
+
+.mb_error
+	!text "No mockingboard detected :("
+	!byte 0
+
+.mb_okay
+	; debug MB slot# 
+	;clc
+	;adc #'0'
+	;sta $400
+	
+	; move font to top of memory
+	+set_ptr $2000,RM_FROM
+	+set_ptr $D400,RM_TO
+	+set_ptr 1148,RM_SIZEL
+	jsr RAM_MOVEUP
+
+	jsr init_interrupt
+
+;-----------------------------------------------------------------------
+; Demo start
+;
+; various init
+; should be clean enough for the demo to be able to loop
+;-----------------------------------------------------------------------
+
+start_demo
+    	; clear all screen buffers
+	lda #' '
+	jsr cleartext
+   	lda #$00
+    	jsr fill_screen_hgr1
+   	jsr fill_screen_hgr2
+
+	STA _DHRoff
+	STA _80COLoff
+	STA _80STOREoff
+	sta _PAGE2off
+	sta _TEXTon
+	sta $C00F 	; enable MOUSETEXT
+
+	jsr newscroll_init
+	jsr clearbuffers_init
+
+	stz starfield_nbstars
+	stz scroll_bounce
+	lda #wave_maxdots-1
+	sta wave_dotnb
+	lda #4		; vbl_count starts at 4, it's the best audio/video sync point (tested on real hardware)
+	sta vbl_count
+	stz vbl_count+1
+	jsr player_mb+6 ; init tune
+	inc music_on
+	
+	; START
+	cli	; enable interrupts
+
+	inc vbl_swaphgr
+	lda #3
+	sta scroll_step	
+	stz current_GRpage
+	sta _PAGE2off
+
+
+;--------------------------------
+; DEMO PARTS
+
+
+	; first way to jump direcly to a part (not recommended)
+;	jmp part5_init 
+
+	; best way to jump direcly to a part: modify vbl_count
+	; $0000 INTRO
+	; $0300 STARFIELD
+	; $0600 SCROLLTEXT
+	; $0C00 SINEWAVES
+	; $1200 GREETINGS
+	; $1800 ROTOZOOM
+	; $1E00 END
+	
+	;lda #$00
+	;sta vbl_count
+	;lda #$00
+	;sta vbl_count+1
+
+	; intro
+
+	; text only
+	+set_ptr sIntro1,ptr1
+	sta _PAGE2off
+	ldy #9
+	ldx #8
+	jsr print
+part1	lda vbl_count+1
+	sta _PAGE2off
+	bne .part1aend
+	lda vbl_count
+	cmp #$c0	; $00c0
+	bcc part1
+.part1aend
+
+	+set_ptr sIntro2,ptr1
+	sta _PAGE2off
+	ldy #5
+	ldx #10
+	jsr print
+part1b	lda vbl_count+1
+	cmp #$1		; $0180
+	bcc part1b
+	lda vbl_count
+	cmp #$80
+	bcc part1b
+
+	+set_ptr sIntro3,ptr1
+	sta _PAGE2off
+	ldy #11
+	ldx #12
+	jsr print
+part1c	lda vbl_count+1
+	cmp #$03	; $0300
+	bcc part1b
+	
+	bra starfield_appears
+	
+sIntro1	!text "<Fenarinarsa presents>",0 ;12
+sIntro2 !text "something really quickly done",0 ;29
+sIntro3 !text "for Revision 2019!",0 ;13
+ 
+ 	; latecomer title appears
+starfield_appears
+	ldx #9
+.late	lda gfx_latecomer,x
+	sta $2128+15,x
+	sta $4128+15,x
+	lda gfx_latecomer+10,x
+	sta $2528+15,x
+	sta $4528+15,x
+	lda gfx_latecomer+20,x
+	sta $2928+15,x
+	sta $4928+15,x
+	lda gfx_latecomer+30,x
+	sta $2d28+15,x
+	sta $4d28+15,x
+	lda gfx_latecomer+40,x
+	sta $3128+15,x
+	sta $5128+15,x
+	lda gfx_latecomer+50,x
+	sta $3528+15,x
+	sta $5528+15,x
+	dex
+	bpl .late
+
+	STA _TEXToff ;Turn on GRAPHICS
+	STA _HIRESon ;Turn on Hi-res
+	STA _MIXEDoff ;Turn on Full screen
+
+
+
+	; starfield appears
+	jsr VSYNC
+	inc vbl_swaphgr
+	lda #3
+	sta scroll_step
+	stz current_GRpage
+	sta _PAGE2off
+	
+part2a	jsr part_scrolltext_start
+	lda vbl_count+1
+	cmp #$06	; 0600 syncpoint for scrolltext
+	bmi part2a
+
+	;stz music_on
+	;jmp start_demo
+
+	; scrolltext
+part2b	jsr part_scrolltext
+	lda vbl_count+1
+	cmp #$0c	; 0c00 syncpoint for dotwaves
+	bmi part2b
+	
+	;dotwaves (or sinewaves)
+part3_init
+	STA _TEXToff ;Turn on GRAPHICS
+	STA _HIRESon ;Turn on Hi-res
+	STA _MIXEDoff ;Turn on Full screen
+
+	lda #$00
+    	jsr fill_screen_hgr1
+   	jsr fill_screen_hgr2
+
+	; sinewaves 1
+   	+set_ptr x2a,ptr2
+ 	jsr waves_init
+	stz wave_dotnb
+	stz waves_debug_flag
+
+part3a	lda wave_dotnb
+	cmp #wave_maxdots
+	beq .ok3
+	inc
+	inc
+	sta wave_dotnb
+.ok3	jsr part_dotwaves
+	jsr waves_keyboard ; debug mode
+	lda waves_debug_flag ; if debug mode is activated, the demo stops here
+	bne .ok3
+	lda vbl_count+1
+	cmp #$0d	; 0d80
+	bcc part3a
+	lda vbl_count
+	cmp #$80
+	bcc part3a
+	
+	; sinewaves 2
+	+set_ptr x2b,ptr2
+ 	jsr waves_init
+	stz wave_dotnb
+part3b	lda wave_dotnb
+	cmp #wave_maxdots
+	beq .ok4
+	inc
+	inc
+	sta wave_dotnb
+.ok4	jsr part_dotwaves
+	lda vbl_count+1
+	cmp #$0f	; 0f00
+	bcc part3b	
+
+	; sinewaves 3
+	+set_ptr x2c,ptr2
+ 	jsr waves_init
+	stz wave_dotnb
+part3c	lda wave_dotnb
+	cmp #wave_maxdots
+	beq .ok5
+	inc
+	inc
+	sta wave_dotnb
+.ok5	jsr part_dotwaves
+	lda vbl_count+1
+	cmp #$10	; 1080
+	bcc part3c
+	lda vbl_count
+	cmp #$80
+	bcc part3c	
+
+	; sinewaves 4
+	+set_ptr x2d,ptr2
+ 	jsr waves_init
+	stz wave_dotnb
+part3d	lda wave_dotnb
+	cmp #wave_maxdots
+	beq .ok6
+	inc
+	inc
+	sta wave_dotnb
+.ok6	jsr part_dotwaves
+	lda vbl_count+1
+	cmp #$12	; 1200
+	bcc part3d
+
+	; greetings
+greetings_init
+	lda	#' '
+	jsr cleartext
+	STA _TEXTon
+	+set_ptr cr,ptr3
+	jsr VSYNC
+	sta _PAGE2off
+	
+part4	jsr greetings
+	; waiting sync point for part5
+	lda vbl_count+1
+	cmp #$17		; 17F0 OK
+	bcc .syncgreetings
+	lda vbl_count
+	cmp #$D0
+	bcs part5_init
+
+.syncgreetings
+	ldx #$30		; wait 48 frames until next group name
+.wait	jsr VSYNC
+	dex
+	bne .wait
+	bra part4
+
+	;rotozoom
+part5_init
+	; prepare part5 (unpacking graphics)
+	+set_ptr roto_apple_bw_packed,ptr1
+	+set_ptr roto_gfx,ptr2
+	jsr packbits_unpack
+	+set_ptr roto_apple_color_packed,ptr1
+	+set_ptr roto_gfx2,ptr2
+	jsr packbits_unpack
+	+set_ptr roto_eye_packed,ptr1
+	+set_ptr roto_gfx3,ptr2
+	jsr packbits_unpack
+
+	; fill TEXT2 then TEXT1 to try to get a nice transition
+	sta _HIRESoff
+	sta _PAGE2off
+	lda #$ff
+	jsr cleartext2
+	sta _TEXToff
+	sta _PAGE2on
+	jsr cleartext1
+	sta _PAGE2off
+	
+	stz scaleH  
+	stz scaleL
+	lda #$01
+	sta scaleDirection
+	;lda #$ff
+	stz tmp2 ; line count for gfx change
+
+	; setup modified code (in case the demo looped)
+	lda #$1a
+	sta p5_mod1+1
+	+modify $4400,p5_mod2_src
+	+modify $4000,p5_mod3_dst
+
+part5	!zone
+	jsr swap_page
+	lda current_GRpage
+	bne .renderp1	; $FF = display page 2
+	jsr rotozoom_page2  ; $00 = display page 1
+	bra .ok
+.renderp1	jsr rotozoom_page1
+.ok	lda vbl_count+1
+	cmp #$1e		; 1e00 OK
+	bcs part_end
+	lda tmp2	; check line change
+	bmi .change
+
+; change gfx during rotozoom
+
+	lda vbl_count+1
+p5_mod1	cmp #$1a		; $1a00, $1c00 = change (modified code)
+	bcc part5
+
+	clc
+	lda p5_mod1+1
+	adc #$02
+	sta p5_mod1+1
+	lda #$40
+	sta p5_mod3_dst+2
+	;bra *
+	lda #-32 ; enable line change
+
+	; copy one gfx line
+.change	inc
+	sta tmp2
+	ldy #31
+.copy
+p5_mod2_src
+	lda $4400,y	; modified ptr
+p5_mod3_dst
+	sta $4000,y	; modified ptr
+	dey
+	bpl .copy
+	+add8to16 32,p5_mod2_src+1
+	+add8to16 32,p5_mod3_dst+1
+	bra part5
+
+
+	; endscreen in DGR
+	; credits
+	; clear DGR buffers
+part_end	sta _80STOREon
+	sta _PAGE2on
+	lda #0
+	jsr cleartext
+	sta _PAGE2off
+	jsr cleartext
+	sta _PAGE2on
+	jsr cleartext4
+	sta _PAGE2off
+	jsr cleartext4
+	jsr VSYNC
+	+set_ptr sEnd1,ptr1
+	ldy #0
+	ldx #20
+	jsr print80
+	+set_ptr sEnd2,ptr1
+	ldy #0
+	ldx #21
+	jsr print80
+	+set_ptr sEnd4,ptr1
+	ldy #0
+	ldx #22
+	jsr print80
+	+set_ptr sEnd,ptr1
+	ldy #80-27
+	ldx #23
+	jsr print80
+	
+	STA _TEXToff
+	STA _DHRon
+	STA _80COLon
+	jsr finalgfx
+.waitend
+	sta _PAGE2off
+	lda vbl_count
+	cmp #$60
+	bcc .waitend
+
+demo_end	; stop music
+	sei
+	jsr player_mb+9	; AY reset
+	stz music_on
+	cli	; we still need vbl_count
+	
+	; restart demo
+.waitrestart
+	lda vbl_count+1
+	cmp #$20
+	bcc .waitrestart
+	sei
+	jmp start_demo
+
+sEnd1	!text "Music: Big Alec/Delta Force"
+	!byte 0
+sEnd2	!text " Code: fenarinarsa, Grouik/French Touch"
+	!byte 0
+sEnd4	!text "  Gfx: Made/bomb, Raccoon"
+	!byte 0
+
+sEnd	!text "fenarinarsa - Revision 2019" ;27
+	!byte 0 
+
+
+part_scrolltext_start
+	inc vbl_swaphgr
+	jsr VSYNC
+
+	; adding stars
+	lda vbl_count
+	and #$1f
+	bne .nothing
+	lda starfield_nbstars
+	cmp #starfield_maxstars
+	beq .nothing
+	inc starfield_nbstars
+	
+.nothing
+	lda scroll_step
+	dec
+	bne .noloop
+	lda #4
+.noloop	sta scroll_step	
+	
+	lda current_GRpage
+	bne .page1draw
+	jsr starfield_hgr2_clear ; clear starfield
+	jsr starfield		; draw starfield
+	rts
+.page1draw
+	jsr starfield_hgr1_clear ; clear starfield
+	jsr starfield		; draw starfield
+	rts
+	
+part_scrolltext		!zone
+	inc vbl_swaphgr
+	jsr VSYNC
+	
+	lda scroll_step
+	dec
+	bne .noloop
+	lda #4
+.noloop	sta scroll_step	
+	
+	lda current_GRpage
+	bne .page1draw
+	jsr starfield_hgr2_clear ; clear starfield
+	jsr newscroll_set_position_hgr2 ; clear scrolltext
+	jsr starfield		; draw starfield
+	jsr newscroll_hgr2	; draw scrolltext
+	rts
+.page1draw
+	jsr starfield_hgr1_clear ; clear starfield
+	jsr newscroll_set_position_hgr1 ; clear scrolltext
+	jsr starfield		; draw starfield
+	jsr newscroll_hgr1	; draw scrolltext
+	rts
+
+
+part_dotwaves	!zone
+	; no VSYNC for this part
+	; just switch between HGR page 1 and HGR page 2
+	; tearing is invisible with this effect so we don't mind
+	lda current_GRpage
+	eor	#$ff
+ 	sta current_GRpage
+	beq .go_page1
+.go_page2
+	sta _PAGE2off
+    	bra .swapdone
+.go_page1
+	sta _PAGE2on
+.swapdone		
+	lda current_GRpage ;$6053
+	beq .page1
+	jsr waves_make
+	jsr clear_waves_hgr2
+	jsr waves_hgr2
+	rts
+	
+.page1	jsr waves_make
+	jsr clear_waves_hgr1
+	jsr waves_hgr1
+	rts
+
+
+;-------------------
+; greetings (v2)
+
+greetings
+	!zone
+	ldy #0
+	lda (ptr3),y
+	sta ptr1
+	iny
+	lda (ptr3),y
+	beq .end
+	sta ptr1+1
+	iny
+	lda (ptr3),y
+	tax
+	iny
+	lda (ptr3),y
+	tay
+	jsr print
+	+add8to16 4,ptr3
+
+.end	rts	
+
+
+cr00	!text	"Atrocity"
+	!byte 0
+cr01	!text	"BlaBla"
+	!byte 0
+cr02	!text	"Clean Crack Band"
+	!byte 0
+cr03	!text	"Ctrl-Alt-Test"
+	!byte 0
+cr04	!text	"Deadliners"
+	!byte 0
+cr05	!text	"Delta Force"
+	!byte 0
+cr06	!text	"Eagles"
+	!byte 0
+cr07	!text	"Equinox"
+	!byte 0
+cr08	!text	"French Touch"
+	!byte 0
+cr09	!text	"Fuzion"
+	!byte 0
+cr10	!text	"HMD"
+	!byte 0
+cr11	!text	"Holocaust"
+	!byte 0
+cr12	!text	"LNX"
+	!byte 0
+cr27	!text	"MJJProd"
+	!byte 0
+cr13	!text	"MO5.COM"
+	!byte 0
+cr14	!text	"MPS"
+	!byte 0
+cr24	!text	"Nanard"
+	!byte 0
+cr29	!text	"Ninjaforce"
+	!byte 0
+cr15	!text	"Nolife (RIP)"
+	!byte 0
+cr16	!text	"Oxygene"
+	!byte 0
+cr17	!text	"Pendragons"
+	!byte 0
+cr18	!text	"PoPsY TeAm"
+	!byte 0
+cr28	!text	"Razor1911"
+	!byte 0
+cr19	!text	"Replicants"
+	!byte 0
+cr20	!text	"Sector One"
+	!byte 0
+cr21	!text	"Silicium"
+	!byte 0
+cr22	!text	"Zuul"
+	!byte 0
+cr23	!text	"The Masters"
+	!byte 0
+cr25	!text	"V8"
+	!byte 0
+cr30	!text	"VMW Productions"
+	!byte 0
+cr26	!text	"X-Men"
+	!byte 0
+
+	; final shape provided for you by sublime text 2
+
+cr	!byte <cr00,>cr00,21,11 ;atrocity
+	!byte <cr01,>cr01,6,12  ;blabla
+	!byte <cr02,>cr02,13,8   ;CCB
+	!byte <cr03,>cr03,18,19  ;ctrl-alt-test
+	!byte <cr04,>cr04,6,21	; deadliners
+	!byte <cr05,>cr05,15,18   ;delta force
+	!byte <cr06,>cr06,22,22   ;eagles
+	!byte <cr07,>cr07,8,25  ;equinox
+	!byte <cr08,>cr08,16,8  ;french touch
+	!byte <cr09,>cr09,3,20  ;fuzion
+	!byte <cr10,>cr10,23,14   ;HMD
+	!byte <cr11,>cr11,8,10   ;holocaust
+	!byte <cr12,>cr12,1,23   ;LNX
+	!byte <cr27,>cr27,5,21   ;MJJ Prod
+	!byte <cr13,>cr13,7,11  ;MO5.COM
+	!byte <cr14,>cr14,23,24   ;MPS
+	!byte <cr24,>cr24,14,23  ; nanard
+	!byte <cr29,>cr29,17,22  ; ninjaforce
+	!byte <cr15,>cr15,10,8   ;Nolife
+	!byte <cr16,>cr16,11,21   ;Oxygene
+	!byte <cr17,>cr17,17,9   ;Pendragons
+	!byte <cr18,>cr18,19,10  ;popsy team
+	!byte <cr28,>cr28,9,22  ;razor1911
+	!byte <cr19,>cr19,9,9   ;replicants
+	!byte <cr20,>cr20,7,23  ;sector one
+	!byte <cr21,>cr21,14,8   ;silicium
+	!byte <cr22,>cr22,2,22   ;zuul
+	!byte <cr23,>cr23,12,8  ;the masters
+	!byte <cr25,>cr25,4,20  ;V8
+	!byte <cr30,>cr30,20,17  ;VMW Productions
+	!byte <cr26,>cr26,12,23  ;X-Men
+	!byte 0,0
+
+;---------------------------------------------------------------
+; initialize the plot clear lists
+; with values that match the first byte of each screen buffer
+; else the first clear will corrupt various locations in memory
+;
+; this was bugged in party version, I guess that was why the demo crashed on some setups
+
+clearbuffers_init	!zone	
+	ldx #0
+	lda #0
+.clear1	sta plot_erase_hgr1_lo,x
+	sta plot_erase_hgr2_lo,x
+	sta plot_erase_hgr1_x,x
+	sta plot_erase_hgr2_x,x
+	dex
+	bne .clear1
+	
+	ldx #0
+	lda #$20
+.clear2	sta plot_erase_hgr1_hi,x
+	sta plot_erase_hgr2_hi,x
+	dex
+	bne .clear2
+	rts
+	
+	
+;-----------------------------------------
+; final gfx copy in DGR (DLR? DLGR?)
+
+finalgfx
+	sta _MIXEDon
+	sta _80STOREon
+	+set_ptr gfx_end,ptr1
+	ldx #2
+	
+.line	stx tmp1
+	lda GR_LINES_LO,x
+	clc
+	adc #$c
+	sta .m1+1
+	sta .m2+1
+	lda GR_LINES_HI_P1,x
+	sta .m1+2
+	sta .m2+2
+	ldy #0
+	ldx #0
+	
+.col	lda (ptr1),y
+	sta _PAGE2on
+.m1	sta $400,x
+	iny
+	lda (ptr1),y
+	sta _PAGE2off
+.m2	sta $400,x	
+	iny
+	inx
+	cpx #16
+	bne .col
+	
+	+add8to16 32,ptr1
+	ldx tmp1
+	inx 
+	cpx #18
+	bne .line
+	
+	rts 
+
+	; This wonderful gfx by Made/Bomb was done in a few minutes at Revision 2019 :O
+	;
+	; Note that it uses the PAL Apple II RGB Le Chat Mauve palette: the colors render quite differently than on an NTSC Apple II.
+	; Watch the video recordings I did on my YouTube channel to check the colors, no emulator render it correctly so far...
+	; For example, GREY1 and GREY2 are actually two different colors on Le Chat Mauve IIc adapters!
+	;
+	; And yes, it was an official Apple adapter (for those who still think it was not), it has the Apple logo engraved on its case
+	;   and was sold with the PAL Apple IIc as the official way to get colors on this machine, the composite output provides only B&W.
+	;
+	; the version of this gfx for the rotozoom is sligthly different, Made removed a lot of mosaic patterns because it looked REALLY bad when animated.
+	; I mean, even worst that how it looks now.
+	;
+	; Note: In DLGR, the bytes in AUX are rotated one bit to the right to get the correct color
+	;	(I found this by trial&error, it's very poorly documented)
+
+gfx_end	!byte   $55,$5A,$55,$A5,$AA,$55,$AA,$55,$AA,$57,$AA,$57,$BA,$97,$AC,$95,$AC,$57,$BE,$77,$BB,$77,$BE,$D7,$BE,$DD,$FF,$FF,$EF,$77,$EE,$DD
+        !byte   $45,$AA,$A5,$5A,$55,$A5,$5A,$A5,$55,$5A,$AA,$A5,$AA,$35,$AC,$35,$55,$A7,$BB,$7D,$BB,$77,$BE,$77,$BE,$DD,$BE,$DD,$BE,$77,$EB,$7D
+        !byte   $45,$AA,$5A,$A5,$55,$AA,$5A,$AA,$55,$A5,$AA,$A5,$95,$A5,$99,$33,$95,$A7,$AA,$57,$AA,$57,$BB,$57,$BB,$57,$BB,$77,$BB,$57,$BB,$7D
+        !byte   $45,$A8,$45,$AA,$55,$AA,$45,$A5,$45,$AA,$55,$A3,$95,$A3,$98,$13,$98,$3A,$55,$A5,$AA,$A5,$AA,$A5,$AA,$57,$AA,$57,$AA,$57,$AA,$57
+        !byte   $45,$18,$45,$AA,$55,$8A,$45,$8A,$15,$28,$18,$21,$81,$12,$C1,$92,$C8,$11,$89,$1A,$45,$AA,$55,$A5,$55,$A5,$AA,$A5,$AA,$A5,$A5,$A5
+        !byte   $58,$18,$45,$28,$04,$08,$10,$20,$00,$20,$00,$20,$00,$00,$00,$00,$50,$D0,$E1,$72,$11,$22,$14,$28,$14,$2A,$45,$1A,$55,$1A,$55,$1A
+        !byte   $48,$28,$01,$20,$11,$82,$41,$A8,$11,$20,$41,$28,$81,$00,$00,$00,$05,$BD,$DE,$27,$41,$28,$00,$88,$A5,$52,$51,$82,$18,$1A,$58,$1A
+        !byte   $11,$22,$41,$88,$44,$AA,$B5,$77,$01,$A8,$A5,$A8,$B8,$00,$00,$00,$00,$31,$A4,$A8,$54,$88,$10,$DA,$BB,$75,$BA,$5A,$54,$82,$18,$1A
+        !byte   $44,$82,$41,$28,$44,$8A,$55,$A7,$00,$A5,$AA,$AB,$55,$AB,$D0,$B0,$D9,$A7,$B5,$A5,$55,$22,$54,$77,$BB,$57,$AB,$55,$55,$A5,$A4,$5A
+        !byte   $42,$47,$BA,$D8,$51,$82,$14,$2A,$45,$80,$15,$AA,$5A,$75,$BA,$AA,$BB,$AA,$55,$25,$51,$AA,$1A,$27,$5A,$55,$B5,$7A,$BA,$75,$BB,$77
+        !byte   $52,$48,$52,$47,$5B,$5A,$5A,$5A,$A4,$52,$51,$A2,$11,$A1,$1C,$A9,$58,$52,$B1,$72,$E1,$7A,$EA,$77,$AB,$57,$CA,$59,$CA,$59,$AA,$57
+        !byte   $A5,$AA,$52,$AA,$52,$4A,$52,$AA,$55,$AA,$8A,$A5,$8B,$17,$8F,$1F,$8E,$AD,$8B,$37,$AA,$55,$DC,$55,$AC,$55,$AA,$55,$BB,$77,$BA,$55
+        !byte   $AA,$55,$55,$AA,$55,$5A,$A5,$AA,$55,$AA,$A5,$51,$A5,$31,$89,$31,$A9,$31,$A9,$75,$DD,$BB,$AA,$75,$BA,$77,$BA,$75,$AA,$57,$7B,$77
+        !byte   $AA,$AA,$55,$5A,$5A,$55,$AA,$55,$A5,$55,$AA,$55,$AA,$33,$99,$33,$A9,$55,$AA,$5B,$DA,$B5,$BB,$77,$B7,$77,$7B,$7E,$7B,$77,$7B,$77
+        !byte   $55,$4A,$55,$5A,$AA,$55,$AA,$55,$5A,$B5,$AA,$B5,$AA,$39,$C9,$39,$AC,$55,$DA,$B5,$6D,$7C,$EB,$7C,$7B,$EE,$7B,$EE,$77,$DE,$77,$DE
+        !byte   $22,$44,$55,$A5,$AA,$55,$5A,$5A,$5D,$B5,$AD,$95,$DC,$9B,$D9,$35,$AC,$9B,$AD,$BC,$6D,$7C,$EB,$DD,$EE,$DE,$77,$EE,$7E,$DE,$FF,$FF
+
+
+	!source	"dotwaves.a"
+	!source	"starfield.a"
+	!source	"scrolltext.a"
+	!source	"tools.a"
+	!source	"tables.a"
+	!source "roto.a"
+	!source "mult16.a"
+	!source	"dotwaves_debug.a"
+
+gfx_latecomer
+	!binary "latecomer.bin"
+	
+	

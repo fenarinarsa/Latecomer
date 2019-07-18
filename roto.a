@@ -1,0 +1,310 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME 0.90
+; Test ROTOZOOM
+; by fenarinarsa 2019
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+
+;----
+; rotozoom
+; original code by Grouik/FRENCH TOUCH (thank you SO MUCH for your work!!!)
+;
+; it's a lolores effect (20x24) lolololol
+; double buffering GR1/GR2
+; drawing happens directly on screen
+; scaling is done with a 16x16bits multiplication rout instead of LUTs
+;
+; so it's a lot faster than Grouik's original effect
+; and it's MANY TIMES SMALLER in BLOODY MEMORY
+;
+; graphics are packed using PACKBITS which is a byte-oriented RLE format
+; that is very very 6502-friendly
+; and guess what, it was defined by Apple
+
+
+rotozoom_page1
+	+modify GR_LINES_HI_P1,roto_mod
+	bra rotozoom
+
+rotozoom_page2
+	+modify GR_LINES_HI_P2,roto_mod
+
+
+rotozoom 	
+!zone
+	;	LDA $C050			; GR
+		;LDA $C056			; LORES
+
+; -----------------
+; ROTOZOOM Théorie:
+; alpha: angle de rotation
+; scale : coeff pour le zoom
+; x et y : coordonnées point écran
+; u et v : coordonnées du point texture
+; déplacement : 
+; xx = cos(alpha)*scale
+; yy = sin(alpha)*scale
+; u = u + xx
+; v = v + yy
+; texture(u,v)->screen(x,y)
+; 
+; code:
+;
+;     ; déplacement
+;     xx = cos(alpha)*scale; 
+;     yy = sin(alpha)*scale;     
+;
+;   for(y=0;y<24;y++) 
+;		{    		// pour les 24 lignes 
+;        _u = u; 	; on sauve les coordonnées du premier pixel à afficher de la ligne
+;        _v = v;    ; 
+;        for(x=0;x<40;x++) // affichage d'une ligne horizontale (40 points)
+;			{    
+;           u = u + xx	; déplacement 		
+;           v = v + yy	; x et y                              
+;           text(u,v) - > screen(x,y)
+;        	} 
+;        u = _u - yy;    // on se place sur le premier pixel de la prochaine ligne a afficher 
+;        v = _v + xx;
+;		}
+;	alpha++
+   
+
+	ldx angle1 ;angle
+	lda cosinus,x
+	
+	sta xxl
+	lda sinus,x
+	sta yyl
+	
+	stz multiplier+1
+	lda xxl
+	bpl .okx
+	dec multiplier+1
+.okx	sta multiplier
+	ldy scaleL
+	sty multiplicand
+	ldy scaleH
+	sty multiplicand+1
+	jsr mult16
+	;sty xxh
+	;stx xxl
+	lda product+1
+	sta xxl
+	lda product+2
+	sta xxh
+
+	stz multiplier+1
+	lda yyl
+	bpl .oky
+	dec multiplier+1
+.oky	sta multiplier
+	ldy scaleL
+	sty multiplicand
+	ldy scaleH
+	sty multiplicand+1
+	jsr mult16
+;	sty yyh
+;	stx yyl
+	lda product+1
+	sta yyl
+	lda product+2
+	sta yyh
+	
+	lda scaleDirection
+	beq .minus
+	+add8to16 $10,scaleL
+	lda scaleH
+	cmp #$4
+	bne .scaleok
+	stz scaleDirection
+	bra .scaleok
+	
+.minus	+sub8to16 $10,scaleL
+	lda scaleH
+	bne .scaleok
+	lda scaleL
+	bne .scaleok
+	inc scaleDirection
+
+.scaleok
+	inc angle1
+	inc angle1
+	inc angle1
+	
+	lda #16
+	sta Ul		
+	sta Vl
+	sta Uh
+	sta Vh
+
+	
+	ldx #20
+.center	sec
+	LDA Ul
+	sbc yyl
+	STA Ul
+	LDA Uh
+	sbc yyh
+	STA Uh
+	
+	sec
+	LDA Vl
+	sbc yyl
+	STA Vl
+	LDA Vh
+	sbc yyh
+	STA Vh
+	dex
+	bne .center	
+
+	ldx #0
+	
+.line	stx SaveY
+	; self modify line start
+	lda GR_LINES_LO,x
+	sta .OFFBUFF+1
+roto_mod	lda GR_LINES_HI_P1,x
+	sta .OFFBUFF+2
+	; _u = u, _v = v
+	lda Ul
+	sta _Ul
+	lda Uh
+	sta _Uh
+	lda Vl
+	sta _Vl
+	lda Vh
+	sta _Vh
+
+	ldx #0
+.column		
+	; u = u + xx
+	; v = v + yy
+	; u = u / 256 et v = v / 256
+	; putpixel(x,y,texture(u,v))
+	CLC
+	LDA Vl
+	ADC yyl
+	STA Vl
+	LDA Vh
+	ADC yyh
+	STA Vh
+	and #$1f		
+	;ASL
+	TAY
+	LDA TYMODL,Y
+	STA ptTexture
+	LDA TYMODH,Y
+	STA ptTexture+1
+	CLC
+	LDA Ul
+	ADC xxl
+	STA Ul
+	LDA Uh
+	ADC xxh
+	STA Uh
+	and #$1f
+;	ASL
+	TAY		; X offset
+;	LDA TXMOD64,Y
+;	TAY
+			
+.OFFTEXT
+	LDA (ptTexture),Y
+.OFFBUFF  STA $0400,X
+	INX
+	CPX #40
+	BNE .column
+	
+	; new line
+	LDA _Ul
+	SEC
+	SBC yyl
+	STA Ul
+	LDA _Uh
+	SBC yyh
+	STA Uh
+			
+	LDA _Vl
+	CLC
+	ADC xxl
+	STA Vl
+	LDA _Vh
+	ADC xxh
+	STA Vh
+			
+	ldx SaveY
+	inx
+	cpx #24
+	bne .line
+	rts
+
+roto_gfx = $4000
+roto_gfx2 = $4400
+roto_gfx3 = $4800
+
+roto_apple_color_packed
+        !byte   $CE,$00,$FF,$CC,$E5,$00,$FD,$CC,$E6,$00,$FC,$CC,$E6,$00,$FC,$CC,$E7,$00,$FC,$CC,$E6,$00,$FD,$CC,$E5,$00,$FE,$CC,$EB,$00,$FC,$CC
+        !byte   $FB,$00,$FC,$CC,$F3,$00,$ED,$CC,$F6,$00,$EB,$CC,$F8,$00,$EA,$CC,$F8,$00,$EB,$DD,$F8,$00,$EB,$DD,$F7,$00,$EC,$DD,$F6,$00,$EC,$DD
+        !byte   $F6,$00,$EC,$99,$F6,$00,$EC,$99,$F6,$00,$EB,$99,$F7,$00,$EB,$11,$F7,$00,$EB,$11,$F7,$00,$EA,$11,$F7,$00,$E9,$11,$F9,$00,$E9,$33
+        !byte   $F9,$00,$E9,$33,$F8,$00,$EB,$33,$F7,$00,$EB,$33,$F6,$00,$ED,$66,$F4,$00,$EF,$66,$F2,$00,$F1,$66,$F0,$00,$FD,$66,$FB,$00,$FD,$66
+        !byte   $D8,$00,$80
+
+roto_apple_bw_packed
+        !byte   $CE,$00,$FF,$FF,$E5,$00,$FD,$FF,$E6,$00,$FC,$FF,$E6,$00,$FC,$FF,$E7,$00,$FC,$FF,$E6,$00,$FD,$FF,$E5,$00,$FE,$FF,$EB,$00,$FC,$FF
+        !byte   $FB,$00,$FC,$FF,$F3,$00,$ED,$FF,$F6,$00,$EB,$FF,$F8,$00,$EA,$FF,$F8,$00,$EB,$FF,$F8,$00,$EB,$FF,$F7,$00,$EC,$FF,$F6,$00,$EC,$FF
+        !byte   $F6,$00,$EC,$FF,$F6,$00,$EC,$FF,$F6,$00,$EB,$FF,$F7,$00,$EB,$FF,$F7,$00,$EB,$FF,$F7,$00,$EA,$FF,$F7,$00,$E9,$FF,$F9,$00,$E9,$FF
+        !byte   $F9,$00,$E9,$FF,$F8,$00,$EB,$FF,$F7,$00,$EB,$FF,$F6,$00,$ED,$FF,$F4,$00,$EF,$FF,$F2,$00,$F1,$FF,$F0,$00,$FD,$FF,$FB,$00,$FD,$FF
+        !byte   $D8,$00,$80
+
+; ---------------------------------------------------
+; Gfx by Made/bomb
+; done directly at the party, so many thanks to him
+
+roto_eye_packed
+        !byte   $FE,$AA,$FB,$55,$FD,$77,$FE,$99,$FC,$55,$FE,$77,$FD,$DD,$07,$77,$77,$55,$AA,$AA,$55,$AA,$AA,$FC,$55,$FD,$77,$FE,$99,$FD,$55,$FE
+        !byte   $77,$FE,$DD,$05,$FF,$FF,$DD,$77,$55,$55,$FC,$AA,$FC,$55,$02,$77,$77,$55,$FE,$99,$FD,$55,$FE,$77,$FB,$DD,$06,$77,$55,$55,$AA,$AA
+        !byte   $55,$55,$FD,$AA,$FC,$55,$02,$33,$33,$99,$FD,$55,$FC,$77,$FE,$DD,$FF,$77,$FF,$55,$FF,$AA,$FE,$55,$FD,$AA,$FD,$55,$FE,$33,$FC,$55
+        !byte   $F9,$77,$FE,$55,$FE,$AA,$00,$55,$FB,$AA,$02,$55,$AA,$AA,$FE,$33,$00,$AA,$FA,$55,$FD,$77,$FD,$55,$F4,$AA,$04,$11,$11,$33,$AA,$AA
+        !byte   $F4,$55,$FE,$AA,$00,$88,$FE,$AA,$FE,$88,$FE,$AA,$FD,$11,$FF,$33,$FF,$AA,$F7,$55,$FF,$AA,$FD,$88,$FF,$AA,$FD,$88,$FE,$11,$FE,$22
+        !byte   $02,$11,$11,$33,$FD,$AA,$FC,$55,$FD,$AA,$00,$88,$FE,$AA,$FD,$88,$FD,$22,$00,$11,$FD,$99,$FE,$11,$FF,$88,$F7,$AA,$00,$88,$FE,$AA
+        !byte   $FF,$88,$F2,$00,$FF,$22,$FB,$88,$FE,$AA,$06,$88,$88,$AA,$88,$00,$00,$22,$F8,$00,$06,$AA,$FF,$FF,$77,$22,$00,$00,$FE,$22,$FD,$11
+        !byte   $05,$AA,$AA,$88,$11,$22,$00,$FE,$22,$FF,$00,$FD,$22,$FE,$00,$0B,$AA,$FF,$FF,$77,$22,$22,$00,$22,$AA,$AA,$22,$22,$FE,$11,$09,$AA
+        !byte   $11,$22,$00,$22,$22,$88,$88,$00,$00,$FE,$22,$00,$11,$FD,$00,$FF,$BB,$FE,$22,$06,$00,$22,$55,$55,$88,$88,$22,$FD,$11,$07,$22,$22
+        !byte   $88,$88,$AA,$77,$00,$00,$FE,$AA,$00,$11,$FD,$00,$00,$11,$FD,$AA,$07,$00,$22,$77,$55,$55,$88,$88,$22,$FE,$11,$00,$22,$FE,$88,$07
+        !byte   $AA,$77,$00,$00,$55,$55,$AA,$77,$FD,$00,$01,$33,$55,$FE,$AA,$14,$22,$DD,$DD,$77,$77,$55,$88,$88,$11,$11,$88,$11,$22,$88,$88,$AA
+        !byte   $77,$22,$00,$BB,$55,$FE,$AA,$2A,$00,$00,$33,$77,$77,$55,$AA,$22,$22,$DD,$DD,$77,$77,$55,$AA,$11,$AA,$AA,$88,$88,$11,$22,$88,$88
+        !byte   $AA,$22,$22,$AA,$55,$AA,$AA,$BB,$BB,$AA,$77,$BB,$77,$55,$AA,$22,$AA,$77,$77,$FE,$55,$0D,$11,$AA,$55,$55,$44,$77,$55,$88,$22,$22
+        !byte   $88,$88,$22,$22,$FE,$AA,$21,$BB,$BB,$AA,$77,$BB,$AA,$AA,$22,$22,$55,$77,$55,$55,$AA,$AA,$55,$55,$77,$77,$44,$44,$77,$DD,$AA,$AA
+        !byte   $22,$22,$AA,$22,$22,$AA,$AA,$77,$77,$FD,$AA,$FC,$22,$01,$AA,$55,$FE,$77,$02,$99,$99,$77,$FE,$44,$FF,$77,$FF,$55,$FE,$AA,$FF,$22
+        !byte   $FF,$11,$FF,$99,$FF,$11,$FE,$22,$01,$AA,$55,$FE,$77,$FD,$99,$02,$55,$77,$AA,$FE,$44,$00,$AA,$FC,$55,$FA,$AA,$06,$55,$77,$77,$DD
+        !byte   $77,$DD,$77,$FC,$99,$FE,$55,$FF,$AA,$FC,$44,$FE,$AA,$FF,$55,$FF,$77,$FE,$FF,$04,$DD,$77,$77,$55,$55,$FC,$99,$02,$55,$77,$77,$FE
+        !byte   $55,$FD,$AA,$00,$44,$FD,$AA,$F8,$11,$03,$33,$55,$55,$BB,$FC,$55,$FE,$77,$02,$55,$77,$55,$F7,$AA,$FD,$11,$FE,$33,$02,$55,$BB,$BB
+        !byte   $FC,$55,$FB,$77,$00,$55,$F8,$AA,$FF,$55,$FF,$11,$FE,$33,$00,$55,$FE,$BB,$00,$55,$F8,$77,$00,$55,$FD,$AA,$FE,$55,$FF,$AA,$FE,$55
+        !byte   $04,$11,$11,$33,$33,$55,$FD,$BB,$F7,$77,$FF,$55,$FE,$AA,$F9,$55,$FE,$33,$FF,$55,$FD,$BB,$F7,$77,$FE,$55,$00,$AA,$F8,$55,$04,$33
+        !byte   $33,$99,$55,$55,$FD,$BB,$FD,$CC,$FD,$EE,$FD,$77,$FC,$55,$FD,$BB,$06,$55,$55,$33,$99,$99,$55,$55,$FE,$BB,$FD,$CC,$FF,$EE,$FE,$FF
+        !byte   $00,$EE,$FD,$77,$FE,$55,$FB,$BB,$00,$55,$FE,$99,$FF,$55,$FE,$BB,$FE,$CC,$FF,$EE,$FD,$FF,$00,$EE,$FC,$77,$FE,$55,$FD,$BB,$FF,$55
+        !byte   $FE,$99,$FD,$55,$FF,$BB,$FF,$CC,$FB,$EE,$FF,$77,$80
+
+
+TYMODL	!for i,0,31 {
+	!byte <(roto_gfx+(i*32))
+}
+TYMODH	!for i,0,31 {
+	!byte >(roto_gfx+(i*32))
+}

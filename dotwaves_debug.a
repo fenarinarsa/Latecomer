@@ -1,0 +1,184 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME
+; sinewaves debug by fenarinarsa 2019
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+
+;-------------------------------------------------
+; debug mode for creating various sines manually
+; should be called when the first wave is running in the demo by pressing a key
+; keys are
+; A-Q / Z-S / E-D / R-F / T-G / Y-G / U-J / I-K
+; space = reset
+; return = fullscreen
+; and yes it's for a french keyboard, my Apple IIc is French, deal with it XD
+
+waves_keyboard	!zone
+		LDA $C000
+		BMI .keypressed
+		rts	
+.keypressed	
+	;AND #%11011111	; MIN->MAJ
+	and  #%01111111
+	sta $C010
+	sta waves_debug_flag
+	lda #wave_maxdots
+	sta wave_dotnb
+	ldx #$10
+	tay
+	and #%00100000
+	beq .maj
+	ldx #$01	
+.maj	stx tmp1
+	tya
+	and #%11011111
+	
+	cmp #$0D	; return
+	bne .A
+	sta _MIXEDoff
+	rts	
+.A	cmp #$41	; A
+	bne .Z
+	+add8to16mem tmp1,x2a
+	jmp .end
+.Z	cmp #$5A	; Z
+	bne .E
+	+add8to16mem tmp1,y2a
+	jmp .end
+.E	cmp #$45	; E
+	bne .R
+	+add8to16mem tmp1,x22a
+	jmp .end
+.R	cmp #$52	; R
+	bne .T
+	+add8to16mem tmp1,y22a
+	jmp .end
+.T	cmp #$54
+	bne .Y
+	+add8to16mem tmp1,x3a
+	jmp .end
+.Y	cmp #$59
+	bne .U
+	+add8to16mem tmp1,y3a
+	jmp .end
+.U	cmp #$55
+	bne .I
+	+add8to16mem tmp1,x32a
+	jmp .end
+.I	cmp #$49
+	bne .Q
+	+add8to16mem tmp1,y32a
+	jmp .end
+	
+.Q	cmp #$51
+	bne .S
+	+sub8to16mem tmp1,x2a
+	jmp .end
+.S	cmp #$53
+	bne .D
+	+sub8to16mem tmp1,y2a
+	jmp .end
+.D	cmp #$44
+	bne .F
+	+sub8to16mem tmp1,x22a
+	jmp .end
+.F	cmp #$46
+	bne .G
+	+sub8to16mem tmp1,y22a
+	jmp .end
+.G	cmp #$47
+	bne .H
+	+sub8to16mem tmp1,x3a
+	jmp .end
+.H	cmp #$48
+	bne .J
+	+sub8to16mem tmp1,y3a
+	jmp .end
+.J	cmp #$4A
+	bne .K
+	+sub8to16mem tmp1,x32a
+	jmp .end
+.K	cmp #$4B
+	bne .space
+	+sub8to16mem tmp1,y32a
+	jmp .end
+	
+.space	cmp #$00
+	bne .end
+	lda #0
+	ldx #15
+.clear	sta x2a,x
+	dex
+	bpl .clear
+	
+.end	+set_ptr x2a,ptr1
+	jsr waves_init
+	sta _MIXEDon
+	+set_ptr wavedbugline,ptr1
+	jsr waves_debug
+	+set_ptr wavedbugline2,ptr1
+	jsr waves_debug
+	rts
+
+waves_debug	!zone
+		
+	ldy #0
+	lda x2+1
+	jsr printhex
+	lda x2
+	jsr printhex
+	iny
+	lda y2+1
+	jsr printhex
+	lda y2
+	jsr printhex
+	iny
+	lda x22+1
+	jsr printhex
+	lda x22
+	jsr printhex
+	iny
+	lda y22+1
+	jsr printhex
+	lda y22
+	jsr printhex
+	iny
+	lda x3+1
+	jsr printhex
+	lda x3
+	jsr printhex
+	iny
+	lda y3+1
+	jsr printhex
+	lda y3
+	jsr printhex
+	iny
+	lda x32+1
+	jsr printhex
+	lda x32
+	jsr printhex
+	iny
+	lda y32+1
+	jsr printhex
+	lda y32
+	jsr printhex
+
+	rts
+
+wavedbugline = $750
+wavedbugline2 = $750+$400

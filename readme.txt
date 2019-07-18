@@ -1,12 +1,10 @@
-# latecomer
-
 Fenarinarsa presents
 
 ##############################################
-#                                              
-#                  LATECOMER                   
-#                   (final)                    
-#                                              
+                                              
+                  LATECOMER                   
+                   (final)                    
+                                              
 ##############################################
 
 An Apple II demo released at REVISION 2019

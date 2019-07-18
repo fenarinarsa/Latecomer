@@ -1,0 +1,638 @@
+;@com.wudsn.ide.asm.hardware=APPLE2 
+; ACME
+; Tools
+; by fenarinarsa 2019
+;
+;This file is part of Latecomer.
+;
+;    Latecomer is free software: you can redistribute it and/or modify
+;    it under the terms of the GNU General Public License as published by
+;    the Free Software Foundation, either version 3 of the License, or
+;    (at your option) any later version.
+;
+;    Latecomer is distributed in the hope that it will be useful,
+;    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;    GNU General Public License for more details.
+;
+;    You should have received a copy of the GNU General Public License
+;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
+;
+
+!cpu 65c02
+
+;-----------------------------------------------------------------------
+; CLEAR HGR LINE
+;
+; x = line to clear
+;-----------------------------------------------------------------------	
+
+	!zone
+clear_line_hgr1
+	lda HGR_LINES_P1_HI,x
+	bra .go
+	
+clear_line_hgr2
+	lda HGR_LINES_P2_HI,x
+	
+.go	sta .m1+2
+	lda HGR_LINES_LO,x
+	sta .m1+1
+	
+	ldy #39
+	lda #0
+.clear
+.m1	sta $ffff,y
+	dey
+	bpl .clear
+	rts	
+
+	
+;================================================================================= 
+; VSYNC / Interrupt handling
+;
+; Should work currently for
+;  Apple IIc PAL (tested)
+;  Apple IIe PAL (should work)
+;  Apple IIc NTSC (should work, with tearing)
+;  Apple IIe NTSC (should work, with tearing)
+;
+; This is one of the most annoying thing to do on Apple II
+; this is compatible only with IIe and IIc and should work on 50/60Hz
+;
+; sorry no II+/IIgs
+;
+; The general idea here is to set up a 50.08Hz MB interrupt that fires at the start
+; of VBLANK (= at the end of DISPLAY), for IIe *AND* IIc
+; On PAL the interrupt will fire exactly at the same position each frame
+; On NTSC... well you'll get tearing
+;=================================================================================
+
+init_interrupt
+		
+	;------------------------------------------------------------
+	; machine detection
+	; by Grouik/FRENCH TOUCH
+
+	; détection APPLE II GS/IIE/IIc
+	LDA $C082		; ROM utilisable entre $D000/$FFFF
+	LDA $FBC0		; IIc detection
+	STA bIIc		; 0 = IIc / Other = pas IIc 
+		
+	; -----------------------------------------------------------
+	; interrupt handling
+	; original by Grouik/FRENCH TOUCH
+
+	; /i\ IMPORTANT /!\ Mockingboard detection must have been done before
+
+
+	sei		; disable interrupts
+	lda	$c08b
+	lda	$c08b ; disable ROM (language card) in order to set our own interrupt at $fffe
+
+
+
+	LDA bIIc
+	bne setinterrupt_IIe
+
+setinterrupt_IIc
+	; this is a IIc
+
+	; The IIc and IIe sync on the start of VBLANK
+	; on IIc this is called VSYNC but it's not located at the actual video VSYNC
+	; 
+	; PAL scanning
+	; - VSYNC:           4 lines 
+	; - top VBLANK:     44 lines
+	; - DISPLAY:       192 lines
+	; - bottom VBLANK:  72 lines <- start of IIe VBLANK* / IIc VSYNC
+	;        TOTAL PAL 312 LINES
+	;	
+	; NTSC scanning
+	; - VSYNC:           4 lines 
+	; - top VBLANK:     34 lines
+	; - DISPLAY:       192 lines
+	; - bottom VBLANK:  32 lines <- start of IIe VBLANK* / IIc VSYNC
+	;       TOTAL NTSC 262 LINES
+	;
+	; * actually the VBLANK starts on cycle #52 of the 192th DISPLAY line
+	;   and stops on the same horizontal position on the last VBLANK line
+	;
+	; (From "Understanding the Apple IIe" by Jim Sather, thanks to Grouik/FT
+	;  for pointing me to this amazing book)
+	;
+	; We're going to put a MB timer on IIe/IIc at roughly the same location,
+	; where the VBLANK starts on a PAL display
+	;
+	; the advantage of this, is that it should work on PAL and NTSC IIc
+	; because using the VSYNC interrupt is not possible on IIc NTSC for latecomer
+	; (the music player needs a ~50Hz interrupt)
+	; in addition it may give more CPU time to effects because the graphic page switch happens
+	; as soon as possible
+	;
+
+	+set_ptr VSYNCI_setup,$FFFE	; setting up a very simple interrupt handler
+
+	; enable the first VBL interrupt (IIc)
+	; note: it should be possible to poll _RDVBLBAR to detect the IIc interrupt (untested)
+
+	sta $c079 	; enable IOU access
+	sta $c05b 	; enable VBL int
+	sta $c078 	; disable IOU access
+
+	cli		; enable interrupts
+	JSR VSYNC		; wait for the IIc VSYNC
+	sei		; disable interrupts
+
+	sta $c079 	; enable IOU access
+	sta $c05a 	; disable VBL int
+	sta $c078 	; disable IOU access
+
+	; now we're just after the end of DISPLAY, roughly at the beginning of VBLANK
+	; we're back in the IIe case
+	bra config_timer
+
+setinterrupt_IIe
+	; it's far simpler on IIe, we only have to poll _RDVBLBAR
+	; to get the start of VBLANK
+
+	JSR VBLANK_IIe		; wait for the start of VBLANK
+
+config_timer
+	; interruption - TIMER 1 6522 
+	LDA #%01000000		; continuous interrupt / PB7 disabled
+	ldy #$0B
+	STA (MB_OUT),y		; $Cx0B Auxiliary Control Register
+
+	LDA #%11000000		; 
+	ldy #$0D
+	STA (MB_OUT),y		; $Cx0D interrupt flag register	(Time Out of Timer 1/Int)
+	ldy #$0E
+	STA (MB_OUT),y		; $Cx0E interrupt Enable register (Timer 1 + Set)
+	
+	; The 6522 timer to play at 50Hz is different on a PAL or NTSC Apple II
+	; Main Apple II clock is (composite frequency):
+	; PAL = 1.016 MHz
+	; NTSC = 1.0205 MHz
+	; 
+	; For future reference the 6522 counter for a complete frame size should be set to
+	; PAL = $4F36 (50.08Hz) = 20280-2 cycles
+	; NTSC = $4284 (~59.94Hz) = 17030-2 cycles
+	;
+	; Of course on PAL Apple IIc the VSYNC interrupt may be used, it already has a frequency of 50.08Hz
+	;
+	; Because of the clock differences,
+	; to get a frequency 50.08Hz on an NTSC Apple II the 6522 counter should actually be set at $4F88
+	; but the difference is not big enough to be heard and I'm lazy
+	;
+	; We're using T1 (first timer) on MB's first 6522 (there is two timers/6522 and two 6522 on a MB)
+	; T1 is set in free run mode so the counter needs to be set up only once
+	; the timer will start and loop once the counter high byte is written
+
+	LDA #$36
+	ldy #$04
+	STA (MB_OUT),y		; $Cx04 T1C-Lower
+	LDA #$4F
+	ldy #$05
+	STA (MB_OUT),y		; $Cx05 T1C-High
+
+	lda MB_OUT+1	; modifies the BIT instruction in VBLI
+	sta vbli_mod1+2
+	+set_ptr VBLI_compatible,$FFFE	; setting up the 50Hz interrupt handler
+
+	rts
+
+	; Our standard VSYNC rout waits for any kind of interrupt that zeroes vblflag
+VSYNC	!zone
+	lda #$ff
+	sta vblflag
+-	lda vblflag
+	bne - 		; wait for vblflag = 0
+ 	rts
+
+	; IIe: waits for the start of VBLANK, relies on the standard _RDVBLBAR polling
+VBLANK_IIe
+	!zone
+	LDA _RDVBLBAR 
+	BPL VBLANK_IIe
+-	LDA _RDVBLBAR 
+    	BMI -
+	RTS
+
+VSYNCI_setup !zone
+	; Interrupt handler for the "Mouse Rom" IIc VBL
+ 	; reactivating the VBL interrupt
+ 	sta $c079 		; enable IOU access
+ 	sta $c05b 		; enable VBL int
+ 	sta $c078 		; disable IOU access
+	stz vblflag
+	rti
+
+
+		!zone
+VBLI_compatible
+	; Interrupt handler for IIe/IIc, using a 50Hz mockingboard interrupt
+	; on PAL should activate roughly at the start of VBLANK
+	; on NTSC will activate quite anywhere => tearing :)
+
+	php				; save flags
+	pha
+	phx
+	phy
+
+	lda #$7f
+vbli_mod1	sta $C40D ; clear IFR
+	;bit $C404       ; Clears interrupt (T1CL)  / modified instruction
+
+	; change VBL flag
+ 	stz vblflag 	; clear hibit
+	
+	;----- HGR double buffering
+	lda vbl_swaphgr
+	beq .noswap
+	stz vbl_swaphgr
+	jsr swap_page
+.noswap	+inc16 vbl_count
+	
+	; play music
+	lda music_on
+	beq .no_music
+	jsr player_mb
+.no_music
+
+	ply
+	plx
+	pla
+	plp
+	rti
+
+swap_page ; switch between page 1 and page 2 if requested
+	lda current_GRpage
+	eor #$ff
+ 	sta current_GRpage	; $00 = display page1 / $FF = display page2
+	beq .go_page1
+.go_page2 sta _PAGE2on
+    	rts
+.go_page1 sta _PAGE2off
+	rts
+
+    
+    !zone clear1
+    
+;==================================================
+; CLEAR SCREEN (HGR)
+;==================================================
+; modified from DHGR routs
+; HGR simply use only the MAIN memory bank
+    
+fill_screen_hgr1
+ ;   STA _RAMWRTaux ;Select AUX memory
+;    LDY #$02 ;Counter for MAIN/AUX
+;.LOOPA
+	LDX #$00 ;Start at byte 0
+.LOOPB
+	STA $2000,X ;Cycle through
+    STA $2100,X ;each of the 32 - 256 byte
+    STA $2200,X ;blocks which make up
+    STA $2300,X ;Hi-res page 1
+    STA $2400,X
+    STA $2500,X
+    STA $2600,X
+    STA $2700,X
+    STA $2800,X
+    STA $2900,X
+    STA $2A00,X
+    STA $2B00,X
+    STA $2C00,X
+    STA $2D00,X
+    STA $2E00,X
+    STA $2F00,X
+    STA $3000,X
+    STA $3100,X
+    STA $3200,X
+    STA $3300,X
+    STA $3400,X
+    STA $3500,X
+    STA $3600,X
+    STA $3700,X
+    STA $3800,X
+    STA $3900,X
+    STA $3A00,X
+    STA $3B00,X
+    STA $3C00,X
+    STA $3D00,X
+    STA $3E00,X
+    STA $3F00,X
+    INX
+    BNE .LOOPB
+    ;LSR ;Turn 55 into 2A otherwise do nothing
+;    DEY
+;    STA _RAMWRTmain ;Now do it all over again
+;    BNE .LOOPA ;in AUX memory
+	rts
+    
+    !zone clear2
+fill_screen_hgr2
+ ;   STA _RAMWRT_AUX ;Select MAIN memory
+    ;LDY #$02 ;Counter for MAIN/AUX
+;.LOOPA
+	LDX #$00 ;Start at byte 0
+.LOOPB
+	STA $4000,X ;Cycle through
+    STA $4100,X ;each of the 32 - 256 byte
+    STA $4200,X ;blocks which make up
+    STA $4300,X ;Hi-res page 1
+    STA $4400,X
+    STA $4500,X
+    STA $4600,X
+    STA $4700,X
+    STA $4800,X
+    STA $4900,X
+    STA $4A00,X
+    STA $4B00,X
+    STA $4C00,X
+    STA $4D00,X
+    STA $4E00,X
+    STA $4F00,X
+    STA $5000,X
+    STA $5100,X
+    STA $5200,X
+    STA $5300,X
+    STA $5400,X
+    STA $5500,X
+    STA $5600,X
+    STA $5700,X
+    STA $5800,X
+    STA $5900,X
+    STA $5A00,X
+    STA $5B00,X
+    STA $5C00,X
+    STA $5D00,X
+    STA $5E00,X
+    STA $5F00,X
+    INX
+    BNE .LOOPB
+   ; LSR ;Turn 55 into 2A otherwise do nothing
+   ; DEY
+   ; STA _RAMWRTmain ;Now do it all over again
+   ; BNE .LOOPA ;in AUX memory
+	rts
+    
+    ;===============================================
+    ;memcpy
+    ;ptr1=source
+    ;ptr2=endsource
+    ;ptr3=dest
+    ;=>to AUX is carry set
+    
+    !zone memcpy
+memcpy
+	bcc .cpy
+    sta _RAMWRTaux
+.cpy
+	lda	(ptr1)
+    sta	(ptr3)
+    clc
+    lda ptr1
+    adc #1
+    sta ptr1
+	sta _RAMWRTmain
+    rts
+    
+
+; Move memory up
+;
+; FROM = source start address
+;   TO = destination start address
+; SIZE = number of bytes to move
+;
+		!zone
+RAM_MOVEUP
+		LDX RM_SIZEH    ; the last byte must be moved first
+         CLC          ; start at the final pages of FROM and TO
+         TXA
+         ADC RM_FROM+1
+         STA RM_FROM+1
+         CLC
+         TXA
+         ADC RM_TO+1
+         STA RM_TO+1
+         INX          ; allows the use of BNE after the DEX below
+         LDY RM_SIZEL
+         BEQ .MU3
+         DEY          ; move bytes on the last page first
+         BEQ .MU2
+.MU1     LDA (RM_FROM),Y
+         STA (RM_TO),Y
+         DEY
+         BNE .MU1
+.MU2     LDA (RM_FROM),Y ; handle Y = 0 separately
+         STA (RM_TO),Y
+.MU3     DEY
+         DEC RM_FROM+1   ; move the next page (if any)
+         DEC RM_TO+1
+         DEX
+         BNE .MU1
+         RTS
+
+;--------------------------------------
+; PACKBITS_UNPACK
+;
+; ptr1 = source
+; ptr2 = destination
+; uses tmp1
+;
+; based on the packbits format by Apple (a byte-based RLE)
+; control byte=$80 means end of packed stream
+
+packbits_src = ptr1
+packbits_dest = ptr2
+
+packbits_unpack !zone
+	;bra *
+	ldy #00
+	lda (packbits_src),Y	; control byte
+	cmp #$80
+	beq .end
+	bcc .copymode
+
+	; negative value (repeat mode)
+	; repeat -a+1 times the value byte
+	eor #$FF
+	clc
+	adc #$02		; A=-A+1
+	sta tmp1
+	iny
+	lda (packbits_src),y ; value byte
+	ldy tmp1
+	dey
+.repeat	sta (packbits_dest),y
+	dey
+	bpl .repeat
+	+add8to16 2,packbits_src
+	bra .fixdest
+
+	; positive value (copy mode)
+	; copy the next n+1 bytes literally
+.copymode	tay
+	inc
+	sta tmp1
+	+inc16 packbits_src
+.copy	lda (packbits_src),y
+	sta (packbits_dest),y
+	dey
+	bpl .copy
+
+	+add8to16mem tmp1,packbits_src
+
+.fixdest	+add8to16mem tmp1,packbits_dest
+	bra packbits_unpack
+
+.end	rts
+
+
+
+;--------------------------------------
+; PRINTHEX
+; 
+; print a byte in A in hex form
+; address of line to print at ptr1, column number in Y
+
+echo_ptr = ptr1		; zp0001
+
+printhex	!zone
+
+	pha
+	lsr
+	lsr
+	lsr
+	lsr
+	jsr .print
+	pla
+.print	and #$0f
+	ora #"0"
+	cmp #"9"+1
+	bcc .out
+	adc #6
+.out	sta (echo_ptr),y
+	iny
+	rts
+
+; print text
+; ptr1=string
+; y=column
+; x=line
+print	!zone
+	lda GR_LINES_LO,x
+	sta ptr2
+	lda GR_LINES_HI_P1,x
+	sta ptr2+1
+.loop	lda (ptr1)
+	beq .end
+	sta (ptr2),y
+	iny
+	+inc16 ptr1
+	bra .loop
+.end	rts
+
+
+;--------------------------------------
+; PRINT TEXT (80 COLUMNS)
+;
+; /!\ USES 80STORE /!\
+; ptr1=string
+; y=column
+; x=line
+
+print80	!zone
+	sta _80STOREoff
+	lda GR_LINES_LO,x
+	sta ptr2
+	lda GR_LINES_HI_P1,x
+	sta ptr2+1
+	tya
+	clc
+	ror
+	tay
+	bcs .loop_odd
+.loop	lda (ptr1)
+	beq .end
+	sta _RAMWRTaux
+	sta (ptr2),y
+	+inc16 ptr1
+	lda (ptr1)
+	beq .end
+	sta _RAMWRTmain
+	sta (ptr2),y
+	iny
+	+inc16 ptr1
+	bra .loop
+.end	rts
+.loop_odd
+	lda (ptr1)
+	beq .end	
+	sta _RAMWRTmain
+	sta (ptr2),y
+	iny
+	+inc16 ptr1
+	lda (ptr1)
+	beq .end
+	sta _RAMWRTaux
+	sta (ptr2),y
+	+inc16 ptr1
+	nop
+	bra .loop_odd
+
+;-----------------------------------------
+; clear TEXT1 and TEXT2
+	
+cleartext	!zone
+	ldx #$0
+	;lda	#' '
+.fill	sta $400,x
+	sta $500,x
+	sta $600,x
+	sta $700,x
+	sta $800,x
+	sta $900,x
+	sta $a00,x
+	sta $b00,x
+	dex
+	bne .fill
+	rts
+
+cleartext1 !zone
+	ldx #$0
+.fill
+	sta $400,x
+	sta $500,x
+	sta $600,x
+	sta $700,x
+	dex
+	bne .fill
+	rts
+
+cleartext2 !zone
+	ldx #$0
+.fill	sta $800,x
+	sta $900,x
+	sta $a00,x
+	sta $b00,x
+	dex
+	bne .fill
+	rts
+	
+;-----------------------------------------
+; clear TEXT1 / only 4 bottom lines
+	
+cleartext4
+	!zone
+	ldx #39
+	lda	#' '
+.fill	sta $650,x
+	sta $6d0,x
+	sta $750,x
+	sta $7d0,x
+	dex
+	bpl .fill
+	rts
