@@ -19,6 +19,67 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
 
+;-----------------------------------------------------------------------
+; Okay I'm going to give you some hints there
+; The theory to make this kind of scrolltext in HGR is quite simple.
+;
+; First make a font that does contain only pairs of 00 and 11 to get
+; only black and white pixels in color. That avoids color issues.
+;
+; Then all characters must be 14 pixels-wide, that makes 2 bytes in HGR.
+; (actually you can make 7/14/21... pixels-wide characters, it depends
+; of the final effect you want)
+;
+;-----------------------------------------------------------------------
+; The first version of this scrolltext didn't use temp buffers, only
+; HGR1 and HGR2. It's quite simple really, let say the characters have
+; a height of 13 lines:
+; 1/ on HGR1, move all 13 lines 1 byte to the left
+; 2/ ...then copy on the far right one byte of the new character on
+;      each line (in my case it's the left part or the right part
+;      of the current character depending on the animation step)
+; 3/ you're done on HGR1, sync with vblank
+; 4/ on HGR2, move all 13 lines 1 byte to the left
+; 5/ get the 13 bytes on the right of HGR1, apply a left logical shift
+;    of 3 bits, then add (ORA) a new part of the character shifted
+;    to the right by 4 bits
+; 6/ you're done with HGR2, sync with vblank and go back to 1/
+;
+; So that's the simple version that gets you a smooth scrolltext.
+; Well actually it makes a 3/4/3/4/3/4 pixels movement but it works.
+; Of course I tricked you because you know that in HGR the bits are
+; reversed, so the logical shifts must be inverted, of course.
+; The font is also in HGR format so the bits are already
+; in the "right" (wrong) order.
+;-----------------------------------------------------------------------
+; The final version is trickier because it can move vertically, so
+; my choice was to use temporary buffers. But it's not efficient
+; to move a whole buffer 1 byte to the left THEN copy it to
+; the screen, so the trick is to use rotating (or looping) buffers.
+; - For each step (HGR1/HGR2), there is a buffer that have a width
+;   of TWO HGR lines + 2 characters
+; - We are going to manage a "Window" in this buffer that match what
+;   we need to copy on the screen, so the window has the same width
+;   as an HGR line
+; - There is a pointer just before the start of the window, and one
+;   at the end of the window
+; - When we add a piece of character (like in 2/ and 5/ in the simple
+;   version), we do it twice, at the location of the two pointers
+; - Then we copy the window to the screen and move the pointers one
+;   byte further in the buffer (= move the window by 7 pixels)
+; - If we reach the end of the buffer, we reset the window's position
+;   and guess what, we just get the same text because it was copied
+;   twice :)
+;
+; In addition to make things faster for the function that copies back
+; the window to HGR, the buffers are not organized per
+; line but per column (13 bytes for 13 lines instead of 13 lines of X bytes)
+;
+; Note that I'm quite certain this could be more optimized, for instance
+; by preshifting the font or by moving the copy function to zeropage.
+; I'm still a new 6502 coder :)
+;-----------------------------------------------------------------------
+
 !cpu 65c02
 ;-----------------------------------------------------------------------
 ; SCROLLTEXT - INIT
