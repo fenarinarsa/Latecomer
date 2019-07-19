@@ -5,7 +5,7 @@
 ACME = acme.exe -f apple -o
 APPLECOMMANDER = /c/retrodev/bin/ac.jar
 DISKNAME = latecomer.dsk
-PRODOS_TEMPLATE = /c/retrodev/template_prodos.dsk
+PRODOS_TEMPLATE = assets/template_prodos.dsk
 
 all:	loader.b player main $(DISKNAME)
 

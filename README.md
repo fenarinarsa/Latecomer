@@ -25,10 +25,9 @@ https://shelter.moe/@fenarinarsa
 You'll need the following tools:  
 - ACME Cross-Assembler  
 - AppleCommander  
-- a ProDOS template disk (any disk that gets you to AppleSoft BASIC is okay)  
 - make (the GNU/Linux tool)  
 
-The easier way to get a functional **make** on Windows is to install the git-sdk-64!  
+The easier way to get a functional **make** on Windows is to install git-sdk-64!  
 Check Makefile for some directions. 
 Change the paths to where you installed the tools above, then type 'make' to generate the disk image.  
 The default target also runs AppleWin at the end of the build process but that's optional.  
