@@ -1,0 +1,509 @@
+; ACME 0.96.4
+;
+; Base: FLOADX v0.61 (LOADER ultra rapide séquentiel)
+; cred : routines from FASTBOOT EA / PRODOS / SAM
+;
+; Interleaving obligatoire : physical inter = [0x00,0x07,0x0E,0x06,0x0D,0x05,0x0C,0x04,0x0B,0x03,0x0A,0x02,0x09,0x01,0x08,0x0F]
+; car chargement par routine carte DISK II
+;
+; v0.01 - base FLOADX v0.61
+!cpu 6502
+!convtab "a2txt.bin" ; 
+!sl "lbl_fload.txt"
+
+
+	*= $FC00 ; ORG = $FC00 (RAM Langage)
+
+; CONSTANTES SYSTEM
+DRVSM0 	=   $C080
+DRVSM1	=   $C081
+DRVSM2  =   $C082
+DRVSM4  =   $C084
+DRVSM6  =   $C086
+DRVOFF  =   $C088
+DRVON   =   $C089
+DRVRD   =   $C08C
+DRVRDM  =   $C08E
+DRVSL1  =   $C08A
+
+; =============================================================================
+; PAGE ZERO
+; -------------------------------------
+; USED IN ALL PARTS
+bRefresh    = $01   ; byte REFRESH RATE ($56/50Hz | $06/60Hz)
+bSLOT       = $02   ; numero SLOT * 0x10
+IntL        = $03   ; L value for INT delay
+IntH        = $04   ; H value for INT delay
+
+; FAST LOAD
+PISDEP   	= $0A   ; PISTE DE DEPART
+SECDEP   	= $0B   ; SECTEUR DE DEPART
+BUFFER   	= $0C 	; Buffer LOW+HIGH ; + $0D
+TOTSEC   	= $0E	; TOTAL DES SECTEURS A CHARGER
+CURTRK1  	= $0F	; piste de départ DRIVE 1 - A INITIALISER A ZERO pour le premier appel !
+
+; MB
+OUT1        = $10   ; +$11
+OUT2        = $12   ; +$13
+OUT3        = $14   ; +$15
+OUT4        = $16   ; +$17
+saveREG13   = $18
+
+; PLAYER PT3
+SETUP       = $30   ; set bit0 to 1, if you want to play without looping
+	                ; bit7 is set each time, when loop point is passed
+; INT
+save_A      = $31
+save_X      = $32
+save_Y      = $33
+; -------------------------------------
+; PART SPECIFIC
+
+; USED par FLOAD                     
+INTER       = $0    ; [$AA-$FF] UTILISEES EN FAIT
+INTER2	    = $FE
+
+COUNT1		= $A9
+COUNT2		= $A8
+COUNT3		= $A7
+TEMPA       = $A6
+TEMPB       = $A5
+TEMPC       = $A4
+SECTOR      = $A3
+; USED by ANIM
+DataAnim    = $A2  
+; =============================================================================
+FLOAD		; $FC00
+!zone
+			; first init = PATCH routine XLITSEC with SLOT#
+XPATCH		BIT XINIT
+			CLC	
+			LDA #<DRVRD
+			ADC bSLOT
+			STA XLITSEC7+1
+			STA XLITSEC2+1
+			STA XLITSEC3+1
+			STA XLITSEC13+1
+			STA XLITSEC4+1
+			LDA #$4C
+			STA XPATCH			; on transforme le BIT XINIT en JMP XINIT pour shunter le patch SLOT à la prochaine execution
+			
+; entrée : PISDEP/SECDEP/TOTSEC/BUFFER  | ANIM : X/Y Lo/hi display adress
+XINIT				
+			; init lecture
+			LDX bSLOT			; récupération SLOT * 0x10
+		 	LDA DRVON,X
+         	LDA DRVSL1,X
+         	LDA DRVRDM,X    	;MODE
+         	LDA DRVRD,X     	;LECTURE
+
+	        LDA DRVSM0,X
+        	LDA DRVSM2,X
+         	LDA DRVSM4,X
+         	LDA DRVSM6,X    	;INIT PHASES POUR BRAS
+                          
+         	LDA #1
+         	JSR TEMPO
+                          
+         	LDY #3
+XINILEC2  	LDA #0
+         	JSR TEMPO
+         	DEY
+         	BNE XINILEC2
+			; ----
+
+			; calcul des buffer 
+			LDA BUFFER
+         	STA XBUF3+1
+         	SEC
+         	SBC #$AB
+         	STA XBUF1+1
+         	LDA BUFFER+1
+         	SBC #0
+         	STA BASE1
+                          
+         	LDA BUFFER+1
+         	STA BASE3
+                          
+         	LDA BUFFER
+         	SEC
+         	SBC #$54
+         	STA XBUF2+1
+         	LDA BUFFER+1
+         	SBC #0
+         	STA BASE2
+			; ----
+
+			; lecture TOUT
+         	LDA SECDEP	
+            STA XFIRSTSEC+1
+            LDA TOTSEC			; initialisation compteur du nombre de secteurs à lire
+        	STA COUNT2			; compteur principal (décrémenter à chaque lecture)  
+                          
+XLITDIS1  	LDA #00
+			STA COUNT3			; initialisation compteur nb de secteurs à lire pour la piste courante
+			LDA COUNT2
+			STA COUNT1			; nb global de secteurs restant à lire (cette piste comprise)
+			LDX PISDEP			; piste à atteindre
+			JSR ARMOVE			; déplacement tête sur la piste à lire
+
+         	; mark sectors à lire pour la piste courante
+			LDA #01				; marker
+XFIRSTSEC	LDX #00				; premier secteur de la piste courante à lire
+.BMARK
+			STA TMARKSECT,X		; on remplit
+			INC COUNT3
+			DEC COUNT1			
+			BEQ .s1				; cas : dernier secteur de la dernière piste à lire ?	
+			INX
+			CPX #$10			; 16 ? piste pleine
+			BNE .BMARK
+			
+.s1	        JSR XLITPIS			; lecture piste
+         	BNE .end			; sans encombre ? on continue
+         	
+         	LDA #00
+			STA XFIRSTSEC+1		; on met à 0 pour le début de la piste suivante
+         	LDA COUNT2			; au bout du nombre
+         	BEQ	.end			; de secteurs total à lire ?
+         	INC PISDEP			; si non piste suivante
+         	JMP XLITDIS1		; on boucle
+                          
+.end	  	LDX bSLOT
+			LDA DRVOFF,X		; drive off
+         	RTS					; sortie
+
+
+; ============================================================================
+; routine de lecture d'une piste
+; in		: BASE1,BASE2,BASE3,PISTE
+; out		: BASE1,BASE2,BASE3, 
+; retour 	: 0 si OK, $FF sinon
+                          
+XLITPIS
+!zone
+            LDA COUNT3
+            STA NBSEC		    ; nb de secteurs à lire pour cette piste
+                          
+XLITPIS6                  
+         	JSR	XLOCSEC			; localisation secteur. OK ? 
+         	BNE XLITPIS6		; si non (recalibration a eu lieu), on boucle sur la localisation secteur
+                          
+XLITPIS3  	LDY	SECTOR
+         	LDA	TMARKSECT,Y		; on checke si le secteur est "bien" à lire
+         	BEQ	XLITPIS6		; si non on en localise un autre...
+
+			; calcul buffer pour la lecture de CE secteur
+         	LDA	SECTOR			
+         	SEC			
+         	SBC	XFIRSTSEC+1		; on soustrait le premier secteur de la piste en cours de lecture (SECDEP si début, 00 sinon)		
+         	TAY
+         	CLC
+         	ADC	BASE1
+         	STA	XBUF1+2
+         	TYA
+         	CLC
+         	ADC	BASE2
+         	STA	XBUF2+2
+         	TYA
+         	CLC
+         	ADC	BASE3
+         	STA	XBUF3+2
+         	; ----
+
+         	JSR XLITSEC			; lit secteur. OK ?
+         	BNE XLITPIS6		; si non, on retry (infinite)
+                          
+XLITPIS5  	LDY	SECTOR			; on marque le secteur
+         	LDA	#0				; comme lu
+         	STA	TMARKSECT,Y		; OK
+			DEC COUNT2			; on décrémente le nombre total de secteurs à lire
+         	DEC COUNT3			; on décrémente le nombre de secteurs à lire pour CETTE piste
+         	BNE	XLITPIS6		; il en reste ? Oui, on boucle (on cherche le secteur suivant). Non, on sort.
+                          
+            ; sortie - mise à jour des buffers pour la piste suivante
+         	LDA	BASE1
+         	CLC
+         	ADC	NBSEC
+         	STA	BASE1
+         	LDA	BASE2
+         	CLC
+         	ADC	NBSEC
+         	STA	BASE2
+         	LDA	BASE3
+         	CLC
+         	ADC	NBSEC
+         	STA	BASE3
+            LDA #00
+         	RTS                 ; A=0 tout est (normalement) OK
+; ============================================================================
+; routine localisation secteur / recalibration si nécessaire
+; in 	: PISTE
+; out 	: n SECTOR localisé
+
+XLOCSEC
+!zone   	
+         	; check entete
+			LDX bSLOT       
+XLOCSEC11 	LDA	DRVRD,X
+         	BPL XLOCSEC11
+         	CMP	#$D5
+         	BNE	XLOCSEC11
+XLOCSEC1  	LDA DRVRD,X
+         	BPL XLOCSEC1
+         	CMP #$AA
+         	BNE	XLOCSEC11
+XLOCSEC2  	LDA	DRVRD,X
+         	BPL	XLOCSEC2
+         	CMP #$96
+         	BNE	XLOCSEC11
+            
+            ; lecture info du sector
+         	LDY	#0
+XLOCSEC4  	LDA DRVRD,X
+         	BPL XLOCSEC4
+         	STA LOCSECA
+XLOCSEC5  	LDA DRVRD,X
+         	BPL XLOCSEC5
+         	SEC
+         	ROL LOCSECA
+         	AND LOCSECA
+         	STA TENTETE,Y
+         	INY
+         	CPY	#3
+         	BNE XLOCSEC4
+            ; sauve numéro (software) du secteur 
+         	LDX	SECPHY
+         	LDA TSECT,X
+         	STA	SECTOR
+         	; check piste
+         	LDA	TRACK
+         	CMP	PISDEP
+         	BNE	.recal			; recalibration si ce n'est pas la bonne piste
+            ; good guy (z = 0 , BNE non pris - pas besoin de LDA #00)
+            RTS       
+                   
+.recal      ; retour piste 0
+         	LDA #48
+         	STA CURTRK1
+         	LDX #0
+         	JSR ARMOVE
+            
+            ; déplacement piste demandée
+         	LDX PISDEP
+         	JSR ARMOVE
+         	LDA #$FF			; pour forcer une relecture      
+		  	RTS					; 
+; ============================================================================
+; routine de lecture/décodage d'un SECTEUR
+; 
+XLITSEC   	
+!zone		
+
+            ; lecture entête DATA (D5AAAD)
+			LDX bSLOT
+XLITSEC11 	LDA DRVRD,X
+         	BPL XLITSEC11
+         	CMP #$D5
+         	BNE XLITSEC11
+XLITSEC8  	LDA DRVRD,X
+         	BPL XLITSEC8
+          	CMP #$AA
+         	BNE XLITSEC11
+XLITSEC9  	LDA DRVRD,X
+         	BPL XLITSEC9
+         	CMP #$AD
+         	BNE XLITSEC11
+               
+            ; lecture/decodage DATA           
+         	LDA #0
+         	LDX #$AA
+XLITSEC1  	STA TEMPA
+XLITSEC7  	LDY DRVRD
+         	BPL XLITSEC7
+         	LDA TABDEC,Y
+         	STA INTER,X
+         	EOR TEMPA
+         	INX
+         	BNE XLITSEC1
+                         
+         	LDX #$AA
+         	BNE XLITSEC2		; always jmp
+XBUF1     	STA $FFFF,X
+XLITSEC2  	LDY DRVRD
+         	BPL XLITSEC2
+         	EOR TABDEC,Y
+         	LDY INTER,X
+         	EOR FONC1,Y
+         	INX
+         	BNE XBUF1
+         	
+         	STA TEMPB             
+         	AND #$FC
+                          
+         	LDX #$AA
+XLITSEC3  	LDY DRVRD
+         	BPL XLITSEC3
+         	EOR TABDEC,Y
+         	LDY INTER,X
+         	EOR FONC2,Y
+XBUF2     	STA $FFFF,X
+            INX
+         	BNE XLITSEC3
+         	
+         	AND	#$FC
+                         
+XLITSEC13 	LDY	DRVRD
+         	BPL	XLITSEC13
+         	LDX #$AC
+XLITSEC12 	EOR TABDEC,Y
+         	LDY INTER2,X
+         	EOR FONC3,Y
+XBUF3     	STA $FFFF,X
+XLITSEC4  	LDY DRVRD
+         	BPL XLITSEC4
+         	INX
+         	BNE XLITSEC12
+         	
+         	AND #$FC              
+         	EOR TABDEC,Y
+         	BNE .errchk
+
+XLITSEC6  	LDA XBUF1+1
+         	STA XLITSEC14+1
+         	LDA XBUF1+2
+         	CLC
+         	ADC #1
+         	STA XLITSEC14+2
+         	LDA TEMPB
+XLITSEC14 	STA $FFFF
+         	LDA #00
+         	RTS             ; ici A = 0 (OK)
+
+; ERREUR DE CHECKSUM
+.errchk     LDA #$FF
+         	RTS	
+; ============================================================================
+; routine déplacement t$ete de lecture - positionnement sur la piste                          
+; In 	: X : PISTE , (CURTRK1 = 0)
+; Out	: CURTRK1
+ARMOVE 
+!zone  
+    		TXA				; piste à atteindre -> A
+         	ASL   
+         	STA   TEMPA
+ARMOVE1  	LDA   CURTRK1
+         	STA   TEMPB
+         	SEC
+         	SBC   TEMPA
+         	BEQ   ARMOVE2	; si même piste, on sort !
+         	BCS   ARMOVE3
+         	INC   CURTRK1
+         	BCC   ARMOVE4
+ARMOVE3  	DEC   CURTRK1
+ARMOVE4  	JSR   ARMOVE5
+         	JSR   ARMOVE6
+         	LDA   TEMPB
+         	AND   #3
+         	ASL  
+         	ORA   bSLOT         
+         	TAY
+	        LDA   DRVSM0,Y
+         	JSR   ARMOVE6
+         	BEQ   ARMOVE1
+ARMOVE5  	LDA   CURTRK1
+         	AND   #3
+         	ASL  
+         	ORA   bSLOT
+         	TAY
+	        LDA   DRVSM1,Y
+ARMOVE2  	RTS					; sortie ROUTINE ARMOVE
+ARMOVE6  	LDA   #$28
+TEMPO     	SEC
+ARMOVE7  	STA	  TEMPC
+ARMOVE8  	SBC   #1
+         	BNE   ARMOVE8
+         	LDA   TEMPC
+         	SBC   #1
+         	BNE   ARMOVE7
+         	RTS
+; ============================================================================
+LOCSECA  	!byte   0
+                     
+TENTETE
+VOLUME   	!byte	0
+TRACK    	!byte 	0
+SECPHY   	!byte  	0
+
+
+BASE1		!byte  	0
+BASE2		!byte   0
+BASE3		!byte   0
+
+NBSEC		!byte   0
+; ------------------------------------
+; Tables Décodage + variables diverses
+TMARKSECT   !byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00  
+TSECT    	!byte $00,$07,$0E,$06,$0D,$05,$0C,$04,$0B,$03,$0A,$02,$09,$01,$08,$0F
+
+; --> 258 valeurs
+FONC1   !byte	00
+FONC2	!byte   00
+FONC3   !byte   00,00,02,00,00,00,01,00,00,00,03,00,00,00,00,02,00,00,02,02,00,00,01,02,00,00,03,02,00,00,00,01
+		!byte	00,00,02,01,00,00,01,01,00,00,03,01,00,00,00,03,00,00,02,03,00,00,01,03,00,00,03,03,00,00,00,00
+		!byte 	02,00,02,00,02,00,01,00,02,00,03,00,02,00,00,02,02,00,02,02,02,00,01,02,02,00,03,02,02,00,00,01
+		!byte 	02,00,02,01,02,00,01,01,02,00
+
+TABDEC	; $96 bytes (150) inutilisés entre TABDEC ET FTABDEC d'où l'idée de reprendre une partie de la table FONC !	
+		!byte   03,01,02,00,00,03,02,00,02,03,02,00,01,03,02,00,03,03,02,00,00,00								; 22
+		!byte 	01,00,02,00,01,00,01,00,01,00,03,00,01,00,00,02,01,00,02,02,01,00,01,02,01,00,03,02,01,00,00,01 ; 32 
+		!byte 	01,00,02,01,01,00,01,01,01,00,03,01,01,00,00,03,01,00,02,03,01,00,01,03,01,00,03,03,01,00,00,00 ; 32
+		!byte 	03,00,02,00,03,00,01,00,03,00,03,00,03,00,00,02,03,00,02,02,03,00,01,02,03,00,03,02,03,00,00,01 ; 32
+		!byte  	03,00,02,01,03,00,01,01,03,00,03,01,03,00,00,03,03,00,02,03,03,00,01,03,03,00,03,03,03,00,00,00 ; 32
+; <--																											; = 150 !
+
+FTABDEC  !byte   $00,$04
+         !byte   $FC
+         !byte   $FC,$08,$0C
+         !byte   $FC,$10,$14,$18
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC,$1C,$20
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC,$24,$28,$2C,$30,$34
+         !byte   $FC
+         !byte   $FC,$38,$3C,$40,$44,$48,$4C
+         !byte   $FC,$50,$54,$58,$5C,$60,$64,$68
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC,$6C
+         !byte   $FC,$70,$74,$78
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC,$7C
+         !byte   $FC
+         !byte   $FC,$80,$84
+         !byte   $FC,$88,$8C,$90,$94,$98,$9C,$A0
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC
+         !byte   $FC,$A4,$A8,$AC
+         !byte   $FC,$B0,$B4,$B8,$BC,$C0,$C4,$C8
+         !byte   $FC
+         !byte   $FC,$CC,$D0,$D4,$D8,$DC,$E0
+         !byte   $FC,$E4,$E8,$EC,$F0,$F4,$F8
+         !byte   $FC
+EOF

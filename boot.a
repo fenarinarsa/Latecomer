@@ -1,0 +1,320 @@
+; ACME 0.96.4
+; boot.a - Minimal version
+; boot0 (T0/S0) / boot1 (FLOAD) / boot2 (MAIN) 
+; by Grouik/French Touch
+; 
+; 0.031 
+
+!cpu 6502
+!convtab "a2txt.bin"    ; incorporation table caractère APPLE II (normal) générale
+
+
+; =============================================================================
+; HARDWARE REQUIREMENTS
+; Autodection setup
+
+REQ_IIe = 0     ; 0 = IIc allowed / 1 = IIe required  (II/II+/IIgs will never pass)
+REQ_PAL = 0     ; 0 = 60Hz allowed / 1 = 50Hz required
+REQ_65C02 = 1   ; 0 = 6502 allowed / 1 = 65C02 required
+
+; =============================================================================
+; ZEROPAGE
+; -------------------------------------
+; USED IN ALL PARTS
+bRefresh    = $01   ; byte REFRESH RATE ($00/50Hz | $01/60Hz)
+bSLOT       = $02   ; numero SLOT * 0x10
+IntL        = $03   ; L value for INT delay
+IntH        = $04   ; H value for INT delay
+
+; FAST LOAD
+PISDEP   	= $0A   ; PISTE DE DEPART
+SECDEP   	= $0B   ; SECTEUR DE DEPART
+BUFFER   	= $0C 	; Buffer LOW+HIGH ; + $0D
+TOTSEC   	= $0E	; TOTAL DES SECTEURS A CHARGER
+CURTRK1  	= $0F	; piste de départ DRIVE 1 - A INITIALISER A ZERO pour le premier appel !
+
+; -------------------------------------
+; PART SPECIFIC
+; Temp
+OUT2        = $12   ; +$13
+Temp        = $FF
+; =============================================================================
+; CONSTANTES SYSTEME
+VERTBLANK   = $C019 ;
+; -------------------------------------
+; CONSTANTES
+MAIN        = $D000     ; main program to run once boot.b is done
+FLOAD       = $FC00     ; where to put the FLOAD routine
+; -------------------------------------
+
+        *= $800 ; ORG = $800
+
+!byte 06        ; reserved byte: number of 256 bytes sectors to load for boot.b + fload.b
+
+START
+!zone
+
+; here the floppy drive motor is running, x = 60 (if slot 6)
+
+        ; $801/$802/$803
+                                     
+
+INIT    STX bSLOT               ; on sauvegarde le numero du SLOT*0x10
+        ; ---------
+        ; modifying calling address for ROM DISK II based on slot#
+        ;TXA
+        ;LSR
+        ;LSR
+        ;LSR
+        ;LSR                     ; $x0 -> $0x
+        ;ORA #$C0                ; $0x -> $Cx
+        ;STA MODSLOT+2           ; sauve
+
+        JSR $FC58       ; HOME (ROM)
+
+
+        ; APPLE II MODEL DETECTION
+        LDA $FBB3
+        CMP #$06                ; IIe/IIc/IIGS = 06 
+        BEQ +
+-       JMP BADGUYIIe  	        ; sinon II ($38) ou II+ ($EA) => bad guy1
++       ; IIc ?
+!if REQ_IIe=1 {
+        LDA $FBC0               ; détection IIc
+        BEQ -                   ; 0 = IIc => bad guy2
+}
+        ; IIgs ou IIe ? 
+        SEC
+        JSR $FE1F               ; TEST GS 
+        BCS +
+        JMP BADGUYIIe              ; si Carry not set IIGS => bad guy3
++
+
+        ; MOCKINGBOARD DETECTION (->OUT2)
+        STA $C403       ; activate MB 4c (IIc)
+        STA $C404
+
+        LDA #00
+        STA OUT2          
+bdet    LDA #$07                ; on commence en $C7 jusqu'en $C1
+        ORA #$C0                ; -> $Cx
+        STA OUT2+1
+        LDY #04                 ; $CX04
+        LDA (OUT2),Y            ; timer 6522 (Low Order Counter) - attention compte à rebour !
+        STA Temp                ; 3 cycles
+        LDA (OUT2),Y            ; + 5 cycles = 8 cycles entre les deux accès au timer
+        SEC                     ; 
+        SBC Temp                ; 
+        CMP #$F8                ; -8 (compte à rebour) ?
+        BEQ +
+        DEC bdet+1              ; on décrémente le "slot" pour tester le suivant
+        BNE bdet                ; on boucle de 7 à 1
+        JMP BADGUYMB              ; on est arrivé au SLOT0 donc pas de MB!
++
+
+!if REQ_65C02=1 {
+        ; 65C02 CPU DETECTION
+        SED             ; BCD mode
+        LDA #$99
+        CLC
+        ADC #$01
+        BMI BADGUYCPU   ; 6502
+        CLD             ; binary mode
+}
+
+        LDA $FBC0               ; détection IIc
+        BEQ nodetectPAL         ; temporaire car la détection ne marche pas sur IIC
+
+        ; REFRESH FREQUENCY DETECTION (->bRefresh)
+        LDA #$7F                ; IIe
+-       CMP VERTBLANK       
+        BPL -                   ; attend fin vbl courant                                   
+-       CMP VERTBLANK        
+        BMI -                   ; attend fin display courant
+
+--      INC COUNTREF            ; 6 ; on incrémente le compteur
+
+        LDX #$09                ;                           
+-       DEX                     ;                   
+        BNE -                   ; = 46 cycles
+                                ; 6 + 46 + 4 + 3 + 4 + 3 = 65 !
+
+        LDA COUNTREF            ; 4
+
+        LDA #$7F                ; 3
+        CMP VERTBLANK           ; 4
+        BPL   --                ; 3 => on boucle tant qu'on est en VBL
+
+        LDA COUNTREF
+        CMP #72                 ; >= 72 alors 50 HZ (120*65 cycles de VBL)
+        BCS +
+        LDA #06                 ; 60HZ (VBL = 70x65 cycles)
+        LDX #$84                ; 2
+        LDY #$42                ; NTSC 1 Frame Delay (-2)
+!if REQ_PAL=1 {
+        BNE BADGUYPAL           ; badguy si 60Hz (à commenter si NTSC OK)
+} else {
+        BNE ++                  ; 60Hz detected
+}
+nodetectPAL
++       LDA #56                 ; 50HZ (VBL = 120x65 cycles)
+        LDX #$36                ; PAL 1 Frame Delay (-2)
+        LDY #$4F   
+++      STA bRefresh
+        STX IntL
+        STY IntH
+
+        JMP LOADER
+
+
+!if REQ_65C02=1 {
+BADGUYCPU       ; 65C02 needed
+        LDA #'6'
+        STA $403
+        LDA #'5'
+        STA $404
+        LDA #'C'
+        STA $405
+        LDA #'0'
+        STA $406
+        LDA #'2'
+        STA $407
+        JMP BADGUY
+}
+
+!if REQ_PAL=1 {
+BADGUYPAL       ; 50Hz needed
+        LDA #'P'
+        STA $403
+        LDA #'A'
+        STA $404
+        LDA #'L'
+        STA $405
+        JMP BADGUY
+}
+
+BADGUYIIe       ; IIe or IIc needed
+        LDA #'I'
+        STA $403
+        LDA #'I'
+        STA $404
+        LDA #'E'
+        STA $405
+!if REQ_IIe=1 {
+        LDA #'/'
+        STA $406
+        LDA #'I'
+        STA $407
+        LDA #'I'
+        STA $408
+        LDA #'C'
+        STA $409
+}
+        JMP BADGUY
+
+BADGUYMB        ; Mockingboard needed
+        LDA #'M'
+        STA $403
+        LDA #'B'
+        STA $404
+
+BADGUY  LDA #'K'
+        STA $400
+        LDA #'O'
+        STA $401
+-       BNE -             ; stopping here
+
+
+;OffHi       !byte 0xFF    ; offset dernier secteur pour lecture BOOT1 (FLOAD)
+;nSector     !byte 0x05    ; n du dernier sector à lire (ordre inverse) pour BOOT1 (FLOAD)
+COUNTREF    !byte 0x00  ; compteur routine detect refresh
+
+
+LOADER  LDA $C083
+        LDA $C083       ; write/read to RAM bank2 (Langage Card)
+
+        ; MOVE FLOAD to upper RAM (1KB)
+        ; NB fload.b must be located in the next 4 sectors after boot.b to be loaded at $0A00 by the boot ROM
+        ldx #4
+-       ldy #0
+cpyfl1  lda $0A00,Y
+cpyfl2  sta FLOAD,Y
+        dey
+        bne cpyfl1
+        inc cpyfl1+2
+        inc cpyfl2+2
+        dex
+        bne -
+
+; =============================================================================
+; DEMO LOADER
+
+        LDX #$00                
+        STX SECDEP              ; secteur
+        STX CURTRK1
+        STX BUFFER              ; buffer low = $00
+        INX                     ; = 1
+        STX PISDEP              ; track 1
+
+        ; font7.bin (5) T1 S0-4 > $2000
+        LDA #$20
+        STA BUFFER+1
+        LDA #5
+        STA TOTSEC
+        JSR FLOAD
+        ; player2_plain.b (4) T1 S5-9 > $1800
+        LDA #$18
+        STA BUFFER+1
+        LDA #5
+        STA SECDEP
+        LDA #4
+        STA TOTSEC
+        JSR FLOAD
+        ; DATA_copper.fym (49) T2 S0 - T5 > $3000
+        LDA #$30
+        STA BUFFER+1
+        LDA #2
+        STA PISDEP
+        LDA #0
+        STA SECDEP
+        LDA #49
+        STA TOTSEC
+        JSR FLOAD
+
+
+        ; AUXMOVE copy tune to AUX
+tune_start = $3000
+tune_length = 12544
+
+AUXMOVE = $C311
+A1L = $3C ; source for auxmove
+A2L = $3E ; end source
+A4L = $42 ; destination for auxmove
+
+!macro set_ptr .src, .pointer {
+    	lda #<.src
+    	sta .pointer
+    	lda #>.src
+    	sta .pointer+1
+    	}
+
+	; copy tune to AUX
+	+set_ptr tune_start,A1L
+	+set_ptr tune_start+tune_length,A2L
+	+set_ptr tune_start,A4L
+	sec
+	jsr AUXMOVE
+
+        ; main_plain.b (41) T6 S0 > $6000
+        LDA #$60
+        STA BUFFER+1
+        LDA #6
+        STA PISDEP
+        LDA #0
+        STA SECDEP
+        LDA #41
+        STA TOTSEC
+        JSR FLOAD
+
+        JMP $6000       ; Start demo
+

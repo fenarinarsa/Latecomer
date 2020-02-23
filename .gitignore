@@ -1,2 +1,4 @@
 *.b
 Thumbs.db
+*.dsk
+lbl_*.txt

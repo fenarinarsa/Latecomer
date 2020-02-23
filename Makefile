@@ -3,11 +3,18 @@
 # because it uses MINGW with all env variables correctly set
 
 ACME = acme.exe -f apple -o
-APPLECOMMANDER = /c/retrodev/bin/ac.jar
+ACMEPLAIN = acme.exe -f plain -o
 DISKNAME = latecomer.dsk
+DISKNAME_TRACK = latecomer_trackload.dsk
 PRODOS_TEMPLATE = assets/template_prodos.dsk
+APPLECOMMANDER = /c/retrodev/bin/ac.jar
+DIRECTWRITE = /c/Python27/python /c/retrodev/bin/dw.py # http://fr3nch.t0uch.free.fr/
 
-all:	loader.b player main $(DISKNAME)
+all: prodos trackload
+
+prodos:	loader.b player main $(DISKNAME)
+
+trackload: $(DISKNAME_TRACK)
 
 main: main.b
 
@@ -38,13 +45,40 @@ $(DISKNAME): main.b player.b player2.b HELLO.bas PARTY.bas SOFA.bas DATA_copper.
 	java -jar $(APPLECOMMANDER) -dos $(DISKNAME) MAIN BIN 0x6000 < main.b
 	/c/jac/wudsn/Tools/EMU/AppleWin/Applewin.exe -d1 $(DISKNAME)
 
+boot.b: boot.a
+	$(ACMEPLAIN) boot.b boot.a
+
+fload.b: boot.a
+	$(ACMEPLAIN) fload.b fload.a
+
+player2_plain.b: player2.a
+	$(ACMEPLAIN) player2_plain.b player2.a
+
+main_plain.b: main.a
+	$(ACMEPLAIN) main_plain.b main.a
+
+$(DISKNAME_TRACK): boot.b fload.b player2_plain.b main_plain.b font7.bin DATA_copper.fym
+	# boot T0 S0
+	$(DIRECTWRITE) $(DISKNAME_TRACK) boot.b 0 0 + p
+	# fload T0 S2
+	$(DIRECTWRITE) $(DISKNAME_TRACK) fload.b 0 2 + p
+	# font7.bin (5) T1 S0-4 > $ 2000
+	$(DIRECTWRITE) $(DISKNAME_TRACK) font7.bin 1 0 + D
+	# player2_plain.b (4) T1 S5-9 > $1800
+	$(DIRECTWRITE) $(DISKNAME_TRACK) player2_plain.b 1 5 + D
+	# DATA_copper.fym (49) T2 S0 - T5 > $3000
+	$(DIRECTWRITE) $(DISKNAME_TRACK) DATA_copper.fym 2 0 + D
+	# main_plain.b (41) T6 S0 > $6000
+	$(DIRECTWRITE) $(DISKNAME_TRACK) main_plain.b 6 0 + D
+
 # copying to SD card for testing on real hardware, thanks to Floppy Emu
 copy:
 	cp $(DISKNAME) /e/
+	cp $(DISKNAME_TRACK) /e/
 	
 run:
 	/c/jac/wudsn/Tools/EMU/AppleWin/Applewin.exe -d1 $(DISKNAME)
 
 clean:	
-	rm -f *.b
+	rm *.b
 
