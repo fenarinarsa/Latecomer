@@ -19,6 +19,7 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
 
+!cpu 6502
 
 ;----
 ; rotozoom
@@ -39,7 +40,7 @@
 
 rotozoom_page1
 	+modify GR_LINES_HI_P1,roto_mod
-	bra rotozoom
+	jmp rotozoom
 
 rotozoom_page2
 	+modify GR_LINES_HI_P2,roto_mod
@@ -92,7 +93,8 @@ rotozoom
 	lda sinus,x
 	sta yyl
 	
-	stz multiplier+1
+	lda #0
+	sta multiplier+1
 	lda xxl
 	bpl .okx
 	dec multiplier+1
@@ -109,7 +111,8 @@ rotozoom
 	lda product+2
 	sta xxh
 
-	stz multiplier+1
+	lda #0
+	sta multiplier+1
 	lda yyl
 	bpl .oky
 	dec multiplier+1
@@ -132,8 +135,9 @@ rotozoom
 	lda scaleH
 	cmp #$4
 	bne .scaleok
-	stz scaleDirection
-	bra .scaleok
+	lda #0
+	sta scaleDirection
+	jmp .scaleok
 	
 .minus	+sub8to16 $10,scaleL
 	lda scaleH
@@ -205,7 +209,6 @@ roto_mod	lda GR_LINES_HI_P1,x
 	ADC yyh
 	STA Vh
 	and #$1f		
-	;ASL
 	TAY
 	LDA TYMODL,Y
 	STA ptTexture
@@ -219,10 +222,7 @@ roto_mod	lda GR_LINES_HI_P1,x
 	ADC xxh
 	STA Uh
 	and #$1f
-;	ASL
 	TAY		; X offset
-;	LDA TXMOD64,Y
-;	TAY
 			
 .OFFTEXT
 	LDA (ptTexture),Y

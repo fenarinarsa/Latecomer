@@ -19,7 +19,7 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
 
-!cpu 65c02
+!cpu 6502
 
 ;-----------------------------------------------------------------------
 ; CLEAR HGR LINE
@@ -95,6 +95,7 @@ init_interrupt
 	LDA bIIc
 	bne setinterrupt_IIe
 
+	!cpu 65c02
 setinterrupt_IIc
 	; this is a IIc
 
@@ -151,6 +152,7 @@ setinterrupt_IIc
 	; now we're just after the end of DISPLAY, roughly at the beginning of VBLANK
 	; we're back in the IIe case
 	jmp config_timer
+	!cpu 6502
 
 setinterrupt_IIe
 	; it's far simpler on IIe, we only have to poll _RDVBLBAR
@@ -219,6 +221,7 @@ VBLANK_IIe
     	BMI -
 	RTS
 
+	!cpu 65c02
 VSYNCI_setup !zone
 	; Interrupt handler for the "Mouse Rom" IIc VBL
  	; reactivating the VBL interrupt
@@ -228,6 +231,7 @@ VSYNCI_setup !zone
 	
 	stz vblflag
 	rti
+	!cpu 6502
 
 
 		!zone
@@ -488,7 +492,7 @@ packbits_unpack !zone
 	+add8to16mem tmp1,packbits_src
 
 .fixdest	+add8to16mem tmp1,packbits_dest
-	bra packbits_unpack
+	jmp packbits_unpack
 
 .end	rts
 

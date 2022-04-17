@@ -40,10 +40,10 @@ MB_pPartition	= $12 ; +$13
 MB_Mem		= $10 ; +$11
 
 
-_RAMRDmain	=	$C002
-_RAMRDaux	=	$C003
-_RAMWRTmain	=	$C004
-_RAMWRTaux	=	$C005
+_RAMRDmain	= $C002
+_RAMRDaux		= $C003
+_RAMWRTmain	= $C004
+_RAMWRTaux	= $C005
 
 tune_start = $3000	
 
