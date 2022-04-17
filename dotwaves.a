@@ -221,7 +221,7 @@ waves_hgr1
 	+modify	plot_erase_hgr1_x,.mx
 	+modify	plot_erase_hgr1_lo,.mlo
 	+modify	plot_erase_hgr1_hi,.mhi
-	bra .start_wave
+	jmp .start_wave
 waves_hgr2
 	+modify HGR_LINES_P2_HI,wave_plot
 	+modify	plot_erase_hgr2_x,.mx

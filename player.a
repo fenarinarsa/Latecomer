@@ -20,7 +20,7 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
 
-!cpu 65c02
+!cpu 65C02
 
 !source "macros.a"
 
@@ -114,7 +114,7 @@ INIT_PLAYER
 	LDA MB_Mem+1
 	ADC #0
 	STA MB_Mem+1
-	BRA .reloc1
+	JMP .reloc1
 .end_relocate	
 
 	;jsr INIT_TUNE
@@ -178,7 +178,8 @@ INIT_SEQUENCE
 
 	LDX #13					; registers (0-13)
 
-.b1	STZ TableCompression,X
+.b1	LDA #0
+	STA TableCompression,X
 	LDY #00
 	LDA TableOffsetDataB,X
 	STA MB_Mem

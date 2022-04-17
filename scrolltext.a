@@ -80,7 +80,7 @@
 ; I'm still a new 6502 coder :)
 ;-----------------------------------------------------------------------
 
-!cpu 65c02
+!cpu 6502
 ;-----------------------------------------------------------------------
 ; SCROLLTEXT - INIT
 ;-----------------------------------------------------------------------
@@ -93,7 +93,8 @@ newscroll_init
 	sta scroll_y1
 	sta scroll_y2
 	
-	stz courbe_step
+	lda #0
+	sta courbe_step
 
 	lda #4
 	sta scroll_step
@@ -128,8 +129,9 @@ newscroll_init
 	dey
 	bne .clear2
 			
-.end	stz vbl_swaphgr
-	stz current_GRpage
+.end	lda #0
+	sta vbl_swaphgr
+	sta current_GRpage
 	rts
 
 
@@ -161,10 +163,10 @@ newscroll_hgr1
 	}
 	
 	; step 2 - increment buffer pointers
-	lda scroll_step1
-	dec
+	ldx scroll_step1
+	dex
 	beq .loopscroll
-	sta scroll_step1
+	stx scroll_step1
 
 	+add8to16 14,scroll_ptr1
 	+add8to16 14,scroll_ptr1end
@@ -172,8 +174,8 @@ newscroll_hgr1
 
 .loopscroll
 	; reset to start of buffer (wrap)
-	lda #41				; nb steps for buffer1 loop
-	sta scroll_step1
+	ldx #41				; nb steps for buffer1 loop
+	stx scroll_step1
 	+set_ptr	scroll_buffer1,scroll_ptr1
 	+set_ptr	scroll_buffer1_end,scroll_ptr1end
 	jmp scroll_copy_hgr1
@@ -246,10 +248,10 @@ newscroll_hgr2
 
 .char_done	
 	; step 2 - increment buffer pointers
-	lda scroll_step2
-	dec
+	ldx scroll_step2
+	dex
 	beq .loopscroll
-	sta scroll_step2
+	stx scroll_step2
 
 	+add8to16 14,scroll_ptr2
 	+add8to16 14,scroll_ptr2end
@@ -257,8 +259,8 @@ newscroll_hgr2
 
 .loopscroll
 	; reset to start of buffer (wrap)
-	lda #41				; nb steps for buffer1 loop
-	sta scroll_step2
+	ldx #41				; nb steps for buffer1 loop
+	stx scroll_step2
 	+set_ptr	scroll_buffer2,scroll_ptr2
 	+set_ptr	scroll_buffer2_end,scroll_ptr2end
 	jmp	scroll_copy_hgr2
@@ -281,7 +283,7 @@ newscroll_set_position_hgr1
 	lda #scroll_y1
 	sta .m2+1			; change to current Y pointer
 	lda scroll_y1
-	bra .go
+	jmp .go
 	
 newscroll_set_position_hgr2	
 	+modify	clear_line_hgr2,.clear_rout
@@ -324,7 +326,7 @@ newscroll_set_position_hgr2
 .larger
 	; we're going down, end clear is at current position
 	sta .mfinal+1
-	bra .clear_the_mess	
+	jmp .clear_the_mess	
 
 .smaller
 	; we're going up, start clear is below current position
@@ -359,7 +361,7 @@ scroll_copy_hgr1
 	+set_ptr HGR_LINES_P1_HI,scroll_hgr_lines_lut
 	+mov16	scroll_ptr1,scroll_ptr
 	ldy scroll_y1
-	bra .go
+	jmp .go
 
 scroll_copy_hgr2
 	+set_ptr HGR_LINES_P2_HI,scroll_hgr_lines_lut
@@ -401,11 +403,12 @@ scroll_copy_hgr2
 	
 new_char
 	!zone
-	lda (text_ptr)
+	ldx #0
+	lda (text_ptr,X)
 	cmp #-1
 	bne .nowrap
 	+set_ptr text,text_ptr
-	bra new_char
+	jmp new_char
 .nowrap
 	cmp #'b'  ; start bounce command
 	bne .nocommand
@@ -414,7 +417,7 @@ new_char
 	sta scroll_y1
 	sta scroll_y2
 	+inc16 text_ptr
-	bra new_char
+	jmp new_char
 .nocommand
 	sec
 	sbc #$A0

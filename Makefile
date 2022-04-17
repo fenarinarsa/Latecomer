@@ -6,9 +6,10 @@ ACME = acme.exe -f apple -o
 ACMEPLAIN = acme.exe -f plain -o
 DISKNAME = latecomer.dsk
 DISKNAME_TRACK = latecomer_trackload.dsk
-PRODOS_TEMPLATE = assets/template_prodos.dsk
-APPLECOMMANDER = /c/retrodev/bin/ac.jar
-DIRECTWRITE = /c/Python27/python /c/retrodev/bin/dw.py # http://fr3nch.t0uch.free.fr/
+PRODOS_TEMPLATE = assets\template_prodos.dsk
+APPLECOMMANDER = c:\retrodev\bin\ac.jar
+DIRECTWRITE = C:\Python310\python c:\retrodev\bin\dw.py # http://fr3nch.t0uch.free.fr/
+EMULATOR = C:\retrodev\bin\AppleWin\Applewin.exe -rgb-card-type feline
 
 all: prodos trackload
 
@@ -33,7 +34,7 @@ loader.b: loader.a
 	$(ACME) loader.b loader.a
 
 $(DISKNAME): main.b player.b player2.b HELLO.bas PARTY.bas SOFA.bas DATA_copper.fym loader.b font7.bin
-	cp $(PRODOS_TEMPLATE) $(DISKNAME)
+	copy $(PRODOS_TEMPLATE) $(DISKNAME)
 	java -jar $(APPLECOMMANDER) -bas $(DISKNAME) STARTUP < HELLO.bas
 	java -jar $(APPLECOMMANDER) -bas $(DISKNAME) PARTY < PARTY.bas
 	java -jar $(APPLECOMMANDER) -bas $(DISKNAME) SOFA < SOFA.bas
@@ -43,7 +44,7 @@ $(DISKNAME): main.b player.b player2.b HELLO.bas PARTY.bas SOFA.bas DATA_copper.
 	java -jar $(APPLECOMMANDER) -dos $(DISKNAME) LOADER BIN 0x1000 < loader.b
 	java -jar $(APPLECOMMANDER) -p $(DISKNAME) FONT BIN 0x2000 < font7.bin
 	java -jar $(APPLECOMMANDER) -dos $(DISKNAME) MAIN BIN 0x6000 < main.b
-	/c/jac/wudsn/Tools/EMU/AppleWin/Applewin.exe -d1 $(DISKNAME)
+#	$(EMULATOR) -d1 $(DISKNAME)
 
 boot.b: boot.a
 	$(ACMEPLAIN) boot.b boot.a
@@ -58,27 +59,28 @@ main_plain.b: main.a
 	$(ACMEPLAIN) main_plain.b main.a
 
 $(DISKNAME_TRACK): boot.b fload.b player2_plain.b main_plain.b font7.bin DATA_copper.fym
-	# boot T0 S0
+# boot T0 S0
 	$(DIRECTWRITE) $(DISKNAME_TRACK) boot.b 0 0 + p
-	# fload T0 S2
+# fload T0 S2
 	$(DIRECTWRITE) $(DISKNAME_TRACK) fload.b 0 2 + p
-	# font7.bin (5) T1 S0-4 > $ 2000
+# font7.bin (5) T1 S0-4 > $ 2000
 	$(DIRECTWRITE) $(DISKNAME_TRACK) font7.bin 1 0 + D
-	# player2_plain.b (4) T1 S5-9 > $1800
+# player2_plain.b (4) T1 S5-9 > $1800
 	$(DIRECTWRITE) $(DISKNAME_TRACK) player2_plain.b 1 5 + D
-	# DATA_copper.fym (49) T2 S0 - T5 > $3000
+# DATA_copper.fym (49) T2 S0 - T5 > $3000
 	$(DIRECTWRITE) $(DISKNAME_TRACK) DATA_copper.fym 2 0 + D
-	# main_plain.b (41) T6 S0 > $6000
+# main_plain.b (41) T6 S0 > $6000
 	$(DIRECTWRITE) $(DISKNAME_TRACK) main_plain.b 6 0 + D
+	$(EMULATOR) -d1 $(DISKNAME_TRACK)
 
 # copying to SD card for testing on real hardware, thanks to Floppy Emu
 copy:
-	cp $(DISKNAME) /e/
-	cp $(DISKNAME_TRACK) /e/
+	copy $(DISKNAME) /e/
+	copy $(DISKNAME_TRACK) /e/
 	
 run:
-	/c/jac/wudsn/Tools/EMU/AppleWin/Applewin.exe -d1 $(DISKNAME)
+	$(EMULATOR) -d1 $(DISKNAME_TRACK)
 
 clean:	
-	rm *.b
+	del *.b
 

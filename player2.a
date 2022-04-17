@@ -20,7 +20,7 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
 
-!cpu 65c02
+!cpu 65C02
 
 !source "macros.a"
 

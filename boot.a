@@ -15,7 +15,7 @@
 
 REQ_IIe = 0     ; 0 = IIc allowed / 1 = IIe required  (II/II+/IIgs will never pass)
 REQ_PAL = 0     ; 0 = 60Hz allowed / 1 = 50Hz required
-REQ_65C02 = 1   ; 0 = 6502 allowed / 1 = 65C02 required
+REQ_65C02 = 0   ; 0 = 6502 allowed / 1 = 65C02 required
 
 ; =============================================================================
 ; ZEROPAGE
