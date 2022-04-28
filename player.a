@@ -20,7 +20,7 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
 
-!cpu 65C02
+!cpu 6502
 
 !source "macros.a"
 
@@ -192,7 +192,8 @@ INIT_SEQUENCE
 	EOR #$FF
 	SEC
 	ADC #$00				; negate A
-.b1pos	INC
+.b1pos	CLC
+	ADC #1
 	STA TableCompteur,X
 	INY
 	LDA (MB_Mem),Y				; value byte
@@ -307,9 +308,9 @@ noreverb
 	bne .shiftdata
 
 	!zone unpack_data
-	LDA MB_SeqCount
-	DEC
-	STA MB_SeqCount
+	LDX MB_SeqCount
+	DEX
+	STX MB_SeqCount
 	BNE .unpack_sequence
 	JMP next_sequence
 		
@@ -317,8 +318,10 @@ noreverb
 	; handling packbits
 	LDX #13
 .b2	LDA TableCompteur,X
-	DEC
+	TAY
+	DEY
 	BEQ .nextpacket ; ==0 read next control byte
+	TYA
 	STA TableCompteur,X ; !=0 still in repeat mode
 		
 	LDA TableCompression,X
@@ -328,9 +331,8 @@ noreverb
 	; ptr+1 next value byte
 	LDA TableOffsetDataB,X
 	STA MB_Mem
-	;CLC
-	;ADC #01
-	INC
+	CLC
+	ADC #01
 	STA TableOffsetDataB,X
 	LDA TableOffsetDataH,X
 	STA MB_Mem+1
@@ -349,7 +351,8 @@ noreverb
 
 .nextpacket
 	LDY #00
-	STZ TableCompression,X	; clear compression mode
+	TYA
+	STA TableCompression,X	; clear compression mode
 	LDA TableOffsetDataB,X
 	STA MB_Mem
 	LDA TableOffsetDataH,X
@@ -363,7 +366,8 @@ noreverb
 	EOR #$FF
 	SEC
 	ADC #$00			; negate A
-.b1pos	INC
+.b1pos	CLC
+	ADC #1
 	STA TableCompteur,X
 	INY
 	LDA (MB_Mem),Y			; value byte
@@ -484,12 +488,13 @@ Init_MB
 ; =============================================================================
 AYRESET	
 !zone
+	LDX #0
 	LDY #$80
 	LDA #$00	; Set fct "Reset"
-	STA (MB_OUT)
+	STA (MB_OUT,x)
 	STA (MB_OUT),y	
 	LDA #$04	; Set fct "Inactive"
-	STA (MB_OUT)
+	STA (MB_OUT,x)
 	STA (MB_OUT),y
 
 	ldx #13
