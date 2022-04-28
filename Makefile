@@ -53,7 +53,8 @@ fload.b: boot.a
 	$(ACMEPLAIN) fload.b fload.a
 
 player2_plain.b: player2.a
-	$(ACMEPLAIN) player2_plain.b player2.a
+#select player.a for stereo or player2.a for mono
+	$(ACMEPLAIN) player2_plain.b player.a
 
 main_plain.b: main.a
 	$(ACMEPLAIN) main_plain.b main.a
@@ -69,7 +70,7 @@ $(DISKNAME_TRACK): boot.b fload.b player2_plain.b main_plain.b font7.bin DATA_co
 	$(DIRECTWRITE) $(DISKNAME_TRACK) player2_plain.b 1 5 + D
 # DATA_copper.fym (49) T2 S0 - T5 > $3000
 	$(DIRECTWRITE) $(DISKNAME_TRACK) DATA_copper.fym 2 0 + D
-# main_plain.b (41) T6 S0 > $6000
+# main_plain.b (42) T6 S0 > $6000
 	$(DIRECTWRITE) $(DISKNAME_TRACK) main_plain.b 6 0 + D
 	$(EMULATOR) -d1 $(DISKNAME_TRACK)
 

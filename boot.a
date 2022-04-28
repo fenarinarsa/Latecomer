@@ -305,14 +305,14 @@ A4L = $42 ; destination for auxmove
 	sec
 	jsr AUXMOVE
 
-        ; main_plain.b (41) T6 S0 > $6000
+        ; main_plain.b (42) T6 S0 > $6000
         LDA #$60
         STA BUFFER+1
         LDA #6
         STA PISDEP
         LDA #0
         STA SECDEP
-        LDA #41
+        LDA #42
         STA TOTSEC
         JSR FLOAD
 
