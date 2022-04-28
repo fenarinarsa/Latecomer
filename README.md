@@ -19,7 +19,7 @@ https://twitter.com/fenarinarsa
 https://shelter.moe/@fenarinarsa
 
 
-## Building instructions
+## Build instructions
 
  
 You'll need the following tools:  
