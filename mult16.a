@@ -19,97 +19,95 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
  
-mult16 		!zone
-		lda	multiplier+1
-		eor	multiplicand+1
-		bmi mult16_neg
+mult16	!zone
+	lda multiplier+1
+	eor multiplicand+1
+	bmi mult16_neg
 
-		lda	#$00
-		sta	product+2	; clear upper bits of product
-		sta	product+3 
-		ldx	#$10		; set binary count to 16 
-.shift_r	lsr	multiplier+1	; divide multiplier by 2 
-		ror	multiplier
-		bcc	.rotate_r 
-		lda	product+2	; get upper half of product and add multiplicand
-		clc
-		adc	multiplicand
-		sta	product+2
-		lda	product+3 
-		adc	multiplicand+1
+	lda #$00
+	sta product+2	; clear upper bits of product
+	sta product+3 
+	ldx #$10		; set binary count to 16 
+.shift_r	lsr multiplier+1	; divide multiplier by 2 
+	ror multiplier
+	bcc .rotate_r 
+	lda product+2	; get upper half of product and add multiplicand
+	clc
+	adc multiplicand
+	sta product+2
+	lda product+3 
+	adc multiplicand+1
 .rotate_r	ror			; rotate partial product 
-		sta	product+3 
-		ror	product+2
-		ror	product+1 
-		ror	product 
-		dex
-		bne	.shift_r 
-		rts
+	sta product+3 
+	ror product+2
+	ror product+1 
+	ror product 
+	dex
+	bne .shift_r 
+	rts
 		
-mult16_neg 		!zone
-		bit multiplier+1
-		bpl .ok1
-		clc
-		lda multiplier
-		eor #$ff
-		adc #1
-		sta multiplier
-		lda multiplier+1
-		eor #$ff
-		adc #0
-		sta multiplier+1
-		bra .go
+mult16_neg !zone
+	bit multiplier+1
+	bpl .ok1
+	clc
+	lda multiplier
+	eor #$ff
+	adc #1
+	sta multiplier
+	lda multiplier+1
+	eor #$ff
+	adc #0
+	sta multiplier+1
+	jmp .go
 .ok1		
-		clc
-		lda multiplicand
-		eor #$ff
-		adc #1
-		sta multiplicand
-		lda multiplicand+1
-		eor #$ff
-		adc #0
-		sta multiplicand+1
+	clc
+	lda multiplicand
+	eor #$ff
+	adc #1
+	sta multiplicand
+	lda multiplicand+1
+	eor #$ff
+	adc #0
+	sta multiplicand+1
 
-.go		lda	#$01
-		sta	product+2	; clear upper bits of product
-		sta	product+3 
-		ldx	#$10		; set binary count to 16 
-.shift_r	lsr	multiplier+1	; divide multiplier by 2 
-		ror	multiplier
-		bcc	.rotate_r 
-		lda	product+2	; get upper half of product and add multiplicand
-		clc
-		adc	multiplicand
-		sta	product+2
-		lda	product+3 
-		adc	multiplicand+1
+.go	lda #$01
+	sta product+2	; clear upper bits of product
+	sta product+3 
+	ldx #$10		; set binary count to 16 
+.shift_r	lsr multiplier+1	; divide multiplier by 2 
+	ror multiplier
+	bcc .rotate_r 
+	lda product+2	; get upper half of product and add multiplicand
+	clc
+	adc multiplicand
+	sta product+2
+	lda product+3 
+	adc multiplicand+1
 .rotate_r	ror			; rotate partial product 
-		sta	product+3 
-		ror	product+2
-		ror	product+1 
-		ror	product 
-		dex
-		bne	.shift_r
-		
-		
-		clc
-		lda product
-		eor #$ff
-		adc #1
-		sta product
-		lda product+1
-		eor #$ff
-		adc #0
-		sta product+1
-		lda product+2
-		eor #$ff
-		adc #0
-		sta product+2
-		lda product+3
-		eor #$ff
-		adc #0
-		sta product+3
-		
-				
-		rts
+	sta product+3 
+	ror product+2
+	ror product+1 
+	ror product 
+	dex
+	bne .shift_r
+
+	clc
+	lda product
+	eor #$ff
+	adc #1
+	sta product
+	lda product+1
+	eor #$ff
+	adc #0
+	sta product+1
+	lda product+2
+	eor #$ff
+	adc #0
+	sta product+2
+	lda product+3
+	eor #$ff
+	adc #0
+	sta product+3
+			
+	rts
 		

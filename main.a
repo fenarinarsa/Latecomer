@@ -41,7 +41,7 @@
 
 
 !convtab "a2txt.bin" 	; incorporation table caractère APPLE II (normal) générale
-!cpu 65c02
+!cpu 6502
 
 !source "macros.a"
 
@@ -84,6 +84,10 @@ vblflag		= $0b
 music_on	= $0c
 vbl_swaphgr	= $0d
 MB_OUT		= $14 ; +$15 / from player.a (detected mockingboard base address)
+
+save_a	=	$20
+save_x	=	$21
+save_y	=	$22
 
 ;scroll_y_current =	$FD
 text_ptr		=	$FC ; +$FD
@@ -220,8 +224,9 @@ wave_y22_hi	= $BF00
 ; MAIN
 ;
 ; here we go
-    
-	stz music_on	; 65C02 detection by crashing at the first instruction on 6502
+
+	lda #0
+	sta music_on	; 65C02 detection by crashing at the first instruction on 6502
 
    	lda #' '
 	jsr cleartext
@@ -245,7 +250,7 @@ wave_y22_hi	= $BF00
 	ldy #0
 	+set_ptr .mb_error,ptr1
 	jsr print
-	bra *
+	jmp *
 
 .mb_error
 	!text "No mockingboard detected :("
@@ -290,13 +295,15 @@ start_demo
 	jsr newscroll_init
 	jsr clearbuffers_init
 
-	stz starfield_nbstars
-	stz scroll_bounce
+	lda #0
+	sta starfield_nbstars
+	sta scroll_bounce
 	lda #wave_maxdots-1
 	sta wave_dotnb
 	lda #4		; vbl_count starts at 4, it's the best audio/video sync point (tested on real hardware)
 	sta vbl_count
-	stz vbl_count+1
+	lda #0
+	sta vbl_count+1
 	jsr player_mb+6 ; init tune
 	inc music_on
 	
@@ -305,8 +312,9 @@ start_demo
 
 	inc vbl_swaphgr
 	lda #3
-	sta scroll_step	
-	stz current_GRpage
+	sta scroll_step
+	lda #0
+	sta current_GRpage
 	sta _PAGE2off
 
 
@@ -328,7 +336,7 @@ start_demo
 	
 	;lda #$00
 	;sta vbl_count
-	;lda #$00
+	;lda #$18
 	;sta vbl_count+1
 
 	; intro
@@ -368,7 +376,7 @@ part1c	lda vbl_count+1
 	cmp #$03	; $0300
 	bcc part1b
 	
-	bra starfield_appears
+	jmp starfield_appears
 	
 sIntro1	!text "<Fenarinarsa presents>",0 ;12
 sIntro2 !text "something really quickly done",0 ;29
@@ -409,7 +417,8 @@ starfield_appears
 	inc vbl_swaphgr
 	lda #3
 	sta scroll_step
-	stz current_GRpage
+	lda #0
+	sta current_GRpage
 	sta _PAGE2off
 	
 part2a	jsr part_scrolltext_start
@@ -439,15 +448,16 @@ part3_init
 	; sinewaves 1
    	+set_ptr x2a,ptr2
  	jsr waves_init
-	stz wave_dotnb
-	stz waves_debug_flag
-
-part3a	lda wave_dotnb
-	cmp #wave_maxdots
-	beq .ok3
-	inc
-	inc
+	lda #0
 	sta wave_dotnb
+	sta waves_debug_flag
+
+part3a	ldx wave_dotnb
+	cpx #wave_maxdots
+	beq .ok3
+	inx
+	inx
+	stx wave_dotnb
 .ok3	jsr part_dotwaves
 	jsr waves_keyboard ; debug mode
 	lda waves_debug_flag ; if debug mode is activated, the demo stops here
@@ -462,13 +472,14 @@ part3a	lda wave_dotnb
 	; sinewaves 2
 	+set_ptr x2b,ptr2
  	jsr waves_init
-	stz wave_dotnb
-part3b	lda wave_dotnb
-	cmp #wave_maxdots
-	beq .ok4
-	inc
-	inc
+	lda #0
 	sta wave_dotnb
+part3b	ldx wave_dotnb
+	cpx #wave_maxdots
+	beq .ok4
+	inx
+	inx
+	stx wave_dotnb
 .ok4	jsr part_dotwaves
 	lda vbl_count+1
 	cmp #$0f	; 0f00
@@ -477,13 +488,14 @@ part3b	lda wave_dotnb
 	; sinewaves 3
 	+set_ptr x2c,ptr2
  	jsr waves_init
-	stz wave_dotnb
-part3c	lda wave_dotnb
-	cmp #wave_maxdots
-	beq .ok5
-	inc
-	inc
+	lda #0
 	sta wave_dotnb
+part3c	ldx wave_dotnb
+	cpx #wave_maxdots
+	beq .ok5
+	inx
+	inx
+	stx wave_dotnb
 .ok5	jsr part_dotwaves
 	lda vbl_count+1
 	cmp #$10	; 1080
@@ -495,13 +507,14 @@ part3c	lda wave_dotnb
 	; sinewaves 4
 	+set_ptr x2d,ptr2
  	jsr waves_init
-	stz wave_dotnb
-part3d	lda wave_dotnb
-	cmp #wave_maxdots
-	beq .ok6
-	inc
-	inc
+	lda #0
 	sta wave_dotnb
+part3d	ldx wave_dotnb
+	cpx #wave_maxdots
+	beq .ok6
+	inx
+	inx
+	stx wave_dotnb
 .ok6	jsr part_dotwaves
 	lda vbl_count+1
 	cmp #$12	; 1200
@@ -530,7 +543,7 @@ part4	jsr greetings
 .wait	jsr VSYNC
 	dex
 	bne .wait
-	bra part4
+	jsr part4
 
 	;rotozoom
 part5_init
@@ -555,12 +568,13 @@ part5_init
 	jsr cleartext1
 	sta _PAGE2off
 	
-	stz scaleH  
-	stz scaleL
+	lda #0
+	sta scaleH  
+	sta scaleL
 	lda #$01
 	sta scaleDirection
-	;lda #$ff
-	stz tmp2 ; line count for gfx change
+	lda #0
+	sta tmp2 ; line count for gfx change
 
 	; setup modified code (in case the demo looped)
 	lda #$1a
@@ -573,7 +587,7 @@ part5	!zone
 	lda current_GRpage
 	bne .renderp1	; $FF = display page 2
 	jsr rotozoom_page2  ; $00 = display page 1
-	bra .ok
+	jmp .ok
 .renderp1	jsr rotozoom_page1
 .ok	lda vbl_count+1
 	cmp #$1e		; 1e00 OK
@@ -597,8 +611,9 @@ p5_mod1	cmp #$1a		; $1a00, $1c00 = change (modified code)
 	lda #-32 ; enable line change
 
 	; copy one gfx line
-.change	inc
-	sta tmp2
+.change	tax
+	inx
+	stx tmp2
 	ldy #31
 .copy
 p5_mod2_src
@@ -609,7 +624,7 @@ p5_mod3_dst
 	bpl .copy
 	+add8to16 32,p5_mod2_src+1
 	+add8to16 32,p5_mod3_dst+1
-	bra part5
+	jmp part5
 
 
 	; endscreen in DGR
@@ -656,7 +671,8 @@ part_end	sta _80STOREon
 demo_end	; stop music
 	sei
 	jsr player_mb+9	; AY reset
-	stz music_on
+	lda #0
+	sta music_on
 	cli	; we still need vbl_count
 	
 	; restart demo
@@ -692,11 +708,11 @@ part_scrolltext_start
 	inc starfield_nbstars
 	
 .nothing
-	lda scroll_step
-	dec
+	ldx scroll_step
+	dex
 	bne .noloop
-	lda #4
-.noloop	sta scroll_step	
+	ldx #4
+.noloop	stx scroll_step	
 	
 	lda current_GRpage
 	bne .page1draw
@@ -712,11 +728,11 @@ part_scrolltext		!zone
 	inc vbl_swaphgr
 	jsr VSYNC
 	
-	lda scroll_step
-	dec
+	ldx scroll_step
+	dex
 	bne .noloop
-	lda #4
-.noloop	sta scroll_step	
+	ldx #4
+.noloop	stx scroll_step	
 	
 	lda current_GRpage
 	bne .page1draw
@@ -743,7 +759,7 @@ part_dotwaves	!zone
 	beq .go_page1
 .go_page2
 	sta _PAGE2off
-    	bra .swapdone
+    	jmp .swapdone
 .go_page1
 	sta _PAGE2on
 .swapdone		

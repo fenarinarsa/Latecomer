@@ -19,7 +19,7 @@
 ;    along with Latecomer.  If not, see <https://www.gnu.org/licenses/>.
 ;
 
-!cpu 65c02
+!cpu 6502
 
 ;-----------------------------------------------------------------------
 ; CLEAR HGR LINE
@@ -30,7 +30,7 @@
 	!zone
 clear_line_hgr1
 	lda HGR_LINES_P1_HI,x
-	bra .go
+	jmp .go
 	
 clear_line_hgr2
 	lda HGR_LINES_P2_HI,x
@@ -95,6 +95,7 @@ init_interrupt
 	LDA bIIc
 	bne setinterrupt_IIe
 
+	!cpu 65c02
 setinterrupt_IIc
 	; this is a IIc
 
@@ -150,7 +151,8 @@ setinterrupt_IIc
 
 	; now we're just after the end of DISPLAY, roughly at the beginning of VBLANK
 	; we're back in the IIe case
-	bra config_timer
+	jmp config_timer
+	!cpu 6502
 
 setinterrupt_IIe
 	; it's far simpler on IIe, we only have to poll _RDVBLBAR
@@ -219,14 +221,17 @@ VBLANK_IIe
     	BMI -
 	RTS
 
+	!cpu 65c02
 VSYNCI_setup !zone
 	; Interrupt handler for the "Mouse Rom" IIc VBL
  	; reactivating the VBL interrupt
  	sta $c079 		; enable IOU access
  	sta $c05b 		; enable VBL int
  	sta $c078 		; disable IOU access
+	
 	stz vblflag
 	rti
+	!cpu 6502
 
 
 		!zone
@@ -236,21 +241,22 @@ VBLI_compatible
 	; on NTSC will activate quite anywhere => tearing :)
 
 	php				; save flags
-	pha
-	phx
-	phy
+	sta save_a
+	stx save_x
+	sty save_y
 
 	lda #$7f
 vbli_mod1	sta $C40D ; clear IFR
 	;bit $C404       ; Clears interrupt (T1CL)  / modified instruction
 
 	; change VBL flag
- 	stz vblflag 	; clear hibit
+	ldx #0
+ 	stx vblflag 	; clear hibit
 	
 	;----- HGR double buffering
 	lda vbl_swaphgr
 	beq .noswap
-	stz vbl_swaphgr
+	stx vbl_swaphgr
 	jsr swap_page
 .noswap	+inc16 vbl_count
 	
@@ -260,9 +266,9 @@ vbli_mod1	sta $C40D ; clear IFR
 	jsr player_mb
 .no_music
 
-	ply
-	plx
-	pla
+	ldy save_y
+	ldx save_x
+	lda save_a
 	plp
 	rti
 
@@ -385,19 +391,18 @@ fill_screen_hgr2
     ;ptr3=dest
     ;=>to AUX is carry set
     
-    !zone memcpy
-memcpy
-	bcc .cpy
-    sta _RAMWRTaux
-.cpy
-	lda	(ptr1)
-    sta	(ptr3)
-    clc
-    lda ptr1
-    adc #1
-    sta ptr1
-	sta _RAMWRTmain
-    rts
+;    !zone memcpy
+;memcpy
+;	bcc .cpy
+;	sta _RAMWRTaux
+;.cpy	lda (ptr1)
+;	sta (ptr3)
+;	clc
+;	lda ptr1
+;	adc #1
+;	sta ptr1
+;	sta _RAMWRTmain
+;	rts
     
 
 ; Move memory up
@@ -408,32 +413,32 @@ memcpy
 ;
 		!zone
 RAM_MOVEUP
-		LDX RM_SIZEH    ; the last byte must be moved first
-         CLC          ; start at the final pages of FROM and TO
-         TXA
-         ADC RM_FROM+1
-         STA RM_FROM+1
-         CLC
-         TXA
-         ADC RM_TO+1
-         STA RM_TO+1
-         INX          ; allows the use of BNE after the DEX below
-         LDY RM_SIZEL
-         BEQ .MU3
-         DEY          ; move bytes on the last page first
-         BEQ .MU2
-.MU1     LDA (RM_FROM),Y
-         STA (RM_TO),Y
-         DEY
-         BNE .MU1
-.MU2     LDA (RM_FROM),Y ; handle Y = 0 separately
-         STA (RM_TO),Y
-.MU3     DEY
-         DEC RM_FROM+1   ; move the next page (if any)
-         DEC RM_TO+1
-         DEX
-         BNE .MU1
-         RTS
+	LDX RM_SIZEH    ; the last byte must be moved first
+	CLC          ; start at the final pages of FROM and TO
+	TXA
+	ADC RM_FROM+1
+	STA RM_FROM+1
+	CLC
+	TXA
+	ADC RM_TO+1
+	STA RM_TO+1
+	INX          ; allows the use of BNE after the DEX below
+	LDY RM_SIZEL
+	BEQ .MU3
+	DEY          ; move bytes on the last page first
+	BEQ .MU2
+.MU1	LDA (RM_FROM),Y
+	STA (RM_TO),Y
+	DEY
+	BNE .MU1
+.MU2	LDA (RM_FROM),Y ; handle Y = 0 separately
+	STA (RM_TO),Y
+.MU3	DEY
+	DEC RM_FROM+1   ; move the next page (if any)
+	DEC RM_TO+1
+	DEX
+	BNE .MU1
+	RTS
 
 ;--------------------------------------
 ; PACKBITS_UNPACK
@@ -470,13 +475,14 @@ packbits_unpack !zone
 	dey
 	bpl .repeat
 	+add8to16 2,packbits_src
-	bra .fixdest
+	jmp .fixdest
 
 	; positive value (copy mode)
 	; copy the next n+1 bytes literally
 .copymode	tay
-	inc
-	sta tmp1
+	iny
+	sty tmp1
+	tay
 	+inc16 packbits_src
 .copy	lda (packbits_src),y
 	sta (packbits_dest),y
@@ -486,7 +492,7 @@ packbits_unpack !zone
 	+add8to16mem tmp1,packbits_src
 
 .fixdest	+add8to16mem tmp1,packbits_dest
-	bra packbits_unpack
+	jmp packbits_unpack
 
 .end	rts
 
@@ -527,12 +533,13 @@ print	!zone
 	sta ptr2
 	lda GR_LINES_HI_P1,x
 	sta ptr2+1
-.loop	lda (ptr1)
+	ldx #0
+.loop	lda (ptr1,x)
 	beq .end
 	sta (ptr2),y
 	iny
 	+inc16 ptr1
-	bra .loop
+	jmp .loop
 .end	rts
 
 
@@ -550,38 +557,39 @@ print80	!zone
 	sta ptr2
 	lda GR_LINES_HI_P1,x
 	sta ptr2+1
+	ldx #0
 	tya
 	clc
 	ror
 	tay
 	bcs .loop_odd
-.loop	lda (ptr1)
+.loop	lda (ptr1,x)
 	beq .end
 	sta _RAMWRTaux
 	sta (ptr2),y
 	+inc16 ptr1
-	lda (ptr1)
+	lda (ptr1,x)
 	beq .end
 	sta _RAMWRTmain
 	sta (ptr2),y
 	iny
 	+inc16 ptr1
-	bra .loop
+	jmp .loop
 .end	rts
 .loop_odd
-	lda (ptr1)
+	lda (ptr1,x)
 	beq .end	
 	sta _RAMWRTmain
 	sta (ptr2),y
 	iny
 	+inc16 ptr1
-	lda (ptr1)
+	lda (ptr1,x)
 	beq .end
 	sta _RAMWRTaux
 	sta (ptr2),y
 	+inc16 ptr1
 	nop
-	bra .loop_odd
+	jmp .loop_odd
 
 ;-----------------------------------------
 ; clear TEXT1 and TEXT2
@@ -628,7 +636,7 @@ cleartext2 !zone
 cleartext4
 	!zone
 	ldx #39
-	lda	#' '
+	lda #' '
 .fill	sta $650,x
 	sta $6d0,x
 	sta $750,x

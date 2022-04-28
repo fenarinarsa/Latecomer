@@ -15,7 +15,7 @@
 
 REQ_IIe = 0     ; 0 = IIc allowed / 1 = IIe required  (II/II+/IIgs will never pass)
 REQ_PAL = 0     ; 0 = 60Hz allowed / 1 = 50Hz required
-REQ_65C02 = 1   ; 0 = 6502 allowed / 1 = 65C02 required
+REQ_65C02 = 0   ; 0 = 6502 allowed / 1 = 65C02 required
 
 ; =============================================================================
 ; ZEROPAGE
@@ -305,14 +305,14 @@ A4L = $42 ; destination for auxmove
 	sec
 	jsr AUXMOVE
 
-        ; main_plain.b (41) T6 S0 > $6000
+        ; main_plain.b (42) T6 S0 > $6000
         LDA #$60
         STA BUFFER+1
         LDA #6
         STA PISDEP
         LDA #0
         STA SECDEP
-        LDA #41
+        LDA #42
         STA TOTSEC
         JSR FLOAD
 
