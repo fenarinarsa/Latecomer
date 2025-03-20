@@ -35,12 +35,13 @@ waves_keyboard	!zone
 .keypressed	
 	;AND #%11011111	; MIN->MAJ
 	and  #%01111111
+	tay
 	sta $C010
 	sta waves_debug_flag
 	lda #wave_maxdots
 	sta wave_dotnb
 	ldx #$10
-	tay
+	tya
 	and #%00100000
 	beq .maj
 	ldx #$01	

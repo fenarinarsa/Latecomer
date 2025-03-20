@@ -8,7 +8,7 @@ DISKNAME = latecomer.dsk
 DISKNAME_TRACK = latecomer_trackload.dsk
 PRODOS_TEMPLATE = assets\template_prodos.dsk
 APPLECOMMANDER = c:\retrodev\bin\ac.jar
-DIRECTWRITE = C:\Python310\python c:\retrodev\bin\dw.py # http://fr3nch.t0uch.free.fr/
+DIRECTWRITE = python c:\retrodev\bin\dw.py # http://fr3nch.t0uch.free.fr/
 EMULATOR = C:\retrodev\bin\AppleWin\Applewin.exe -rgb-card-type feline
 
 all: prodos trackload
@@ -76,12 +76,12 @@ $(DISKNAME_TRACK): boot.b fload.b player2_plain.b main_plain.b font7.bin DATA_co
 
 # copying to SD card for testing on real hardware, thanks to Floppy Emu
 copy:
-	copy $(DISKNAME) /e/
-	copy $(DISKNAME_TRACK) /e/
+	cp $(DISKNAME) /e/
+	cp $(DISKNAME_TRACK) /e/
 	
 run:
 	$(EMULATOR) -d1 $(DISKNAME_TRACK)
 
 clean:	
-	del *.b
+	rm *.b
 
