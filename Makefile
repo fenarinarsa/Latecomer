@@ -6,10 +6,10 @@ ACME = acme.exe -f apple -o
 ACMEPLAIN = acme.exe -f plain -o
 DISKNAME = latecomer.dsk
 DISKNAME_TRACK = latecomer_trackload.dsk
-PRODOS_TEMPLATE = assets\template_prodos.dsk
-APPLECOMMANDER = c:\retrodev\bin\ac.jar
-DIRECTWRITE = python c:\retrodev\bin\dw.py # http://fr3nch.t0uch.free.fr/
-EMULATOR = C:\retrodev\bin\AppleWin\Applewin.exe -rgb-card-type feline
+PRODOS_TEMPLATE = assets/template_prodos.dsk
+APPLECOMMANDER = /c/retrodev/bin/ac.jar
+DIRECTWRITE = python /c/retrodev/bin/dw.py # http://fr3nch.t0uch.free.fr/
+EMULATOR = /c/retrodev/bin/AppleWin/Applewin.exe -rgb-card-type feline
 
 all: prodos trackload
 
@@ -34,7 +34,7 @@ loader.b: loader.a
 	$(ACME) loader.b loader.a
 
 $(DISKNAME): main.b player.b player2.b HELLO.bas PARTY.bas SOFA.bas DATA_copper.fym loader.b font7.bin
-	copy $(PRODOS_TEMPLATE) $(DISKNAME)
+	cp $(PRODOS_TEMPLATE) $(DISKNAME)
 	java -jar $(APPLECOMMANDER) -bas $(DISKNAME) STARTUP < HELLO.bas
 	java -jar $(APPLECOMMANDER) -bas $(DISKNAME) PARTY < PARTY.bas
 	java -jar $(APPLECOMMANDER) -bas $(DISKNAME) SOFA < SOFA.bas
